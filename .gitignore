@@ -1,0 +1,13 @@
+# The GIT repository only tracks source files, so we tell GIT
+# to ignore everything else.
+# Ignore compiler output
+bin/*
+# Ignore operational files
+*.log
+# Ignore generated documentation files
+*.html
+*.css
+# Ignore editor backup files
+*.*~
+*~
+
