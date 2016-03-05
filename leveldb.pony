@@ -382,7 +382,12 @@ class LevelDB
     @leveldb_options_destroy( opts )
     if not _errptr.is_null() then error end
  
-  fun ref put( key: ByteSeq, value: ByteSeq ) ? =>
+  fun ref update( key: ByteSeq, value: ByteSeq ) ? =>
+    """
+    Write operations are 'update' so that Pony syntactic sugar will work
+    for statements like 
+	    db( key ) = value
+    """
     _errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     @leveldb_put( _dbhandle, opts,
