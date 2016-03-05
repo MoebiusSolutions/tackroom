@@ -1,12 +1,7 @@
 actor Main
   new create( env: Env ) =>
-    try
-	    let db = LevelDB.create( "testdb" )
-	    if not db.errptr.is_null() then
-		    let s = String.from_cstring(db.errptr)
-		    env.out.print(s)
-	    end
-	    
+    let db = LevelDB.create( "testdb" )
+    env.out.print("Open error "+db.errtxt)
       try
         db( "Orange" ) = "fruit" 
         db( "Apple" ) = "fruit" 
@@ -33,6 +28,4 @@ actor Main
       end
       db.close()
       env.out.print("LevelDB test complete")
-    else
-      env.out.print("Could not open DB ")
-    end
+

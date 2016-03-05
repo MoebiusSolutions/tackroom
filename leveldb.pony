@@ -360,6 +360,7 @@ class LevelDB
   Represents an open connection to a LevelDB database.
   """
   let _dbhandle: Pointer[U8] tag
+  var errtxt: String ref
   var errptr: Pointer[U8]
 
   new create( name: String ) =>
@@ -368,12 +369,18 @@ class LevelDB
     """
     errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
-    @leveldb_options_set_error_if_exists( opts, U8(1) )
+    @leveldb_options_set_create_if_missing( opts, U8(1) )
     _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr)
     @leveldb_options_destroy( opts )
+    errtxt = if errptr.is_null() then
+       String.create()
+    else
+       String.from_cstring( errptr )
+    end
+
     //if not errptr.is_null() then error end
 
-  new open( name: String ) ? =>
+  new open( name: String ) =>
     """
     Open an existing LevelDB database.
     """
@@ -381,7 +388,11 @@ class LevelDB
     let opts = @leveldb_options_create()
     _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr )
     @leveldb_options_destroy( opts )
-    if not errptr.is_null() then error end
+    errtxt = if errptr.is_null() then
+       String.create()
+    else
+       String.from_cstring( errptr )
+    end
  
   fun ref update( key: ByteSeq, value: ByteSeq ) ? =>
     """
