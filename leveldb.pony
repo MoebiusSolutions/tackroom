@@ -1,6 +1,7 @@
 /* Pony interface to the LevelDB key-value database from Google.
 
-  Does not support:
+Currently this uses the "C" binding to LevelDB, which does not support
+the following:
   . getters for the option types
   . custom comparators that implement key shortening
   . custom iter, db, env, cache implementations using just the C bindings
@@ -24,7 +25,7 @@
 */
   
 // LevelDB is available from https://github.com/google/leveldb.git
-use "lib:libleveldb"
+use "lib:leveldb"
 
 // First we translate the LevelDB C API calls into Pony FFIs.
 // These came from include/c.h in the LevelDB source files.
@@ -359,28 +360,28 @@ class LevelDB
   Represents an open connection to a LevelDB database.
   """
   let _dbhandle: Pointer[U8] tag
-  var _errptr: Pointer[U8]
+  var errptr: Pointer[U8]
 
-  new create( name: String ) ? =>
+  new create( name: String ) =>
     """
     Create a new LevelDB database
     """
-    _errptr = Pointer[U8].create()
+    errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     @leveldb_options_set_error_if_exists( opts, U8(1) )
-    _dbhandle = @leveldb_open( opts, name.cstring(), addressof _errptr)
+    _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr)
     @leveldb_options_destroy( opts )
-    if not _errptr.is_null() then error end
+    //if not errptr.is_null() then error end
 
   new open( name: String ) ? =>
     """
     Open an existing LevelDB database.
     """
-    _errptr = Pointer[U8].create()
+    errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
-    _dbhandle = @leveldb_open( opts, name.cstring(), addressof _errptr )
+    _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr )
     @leveldb_options_destroy( opts )
-    if not _errptr.is_null() then error end
+    if not errptr.is_null() then error end
  
   fun ref update( key: ByteSeq, value: ByteSeq ) ? =>
     """
@@ -388,14 +389,14 @@ class LevelDB
     for statements like 
 	    db( key ) = value
     """
-    _errptr = Pointer[U8].create()
+    errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     @leveldb_put( _dbhandle, opts,
 		key.cstring(), key.size(),
 		value.cstring(), value.size(),
-		addressof _errptr)
+		addressof errptr)
     @leveldb_options_destroy( opts )
-    if not _errptr.is_null() then error end
+    if not errptr.is_null() then error end
 
   fun ref apply( key: ByteSeq ): String ref ? =>
     """
@@ -405,21 +406,22 @@ class LevelDB
     """
     // Initialize output fields
     var vlen: USize = 0
-    _errptr = Pointer[U8].create()
+    errptr = Pointer[U8].create()
     // No options for now.
     let opts = @leveldb_options_create()
     let result = @leveldb_get( _dbhandle, opts, key.cstring(), key.size(),
-    addressof vlen, addressof _errptr)
+    addressof vlen, addressof errptr)
     // Free the options structure
     @leveldb_options_destroy( opts )
     // Check for errors
-    chkerror( _errptr )
+    chkerror( errptr )
     // result is null if record not found
     if result.is_null() then
       error
     else
       // Create a String for the buffer that was returned.  LevelDB did
-      // a 'malloc' of this data - hopefully Pony will GC it properly.	
+      // a 'malloc' of this data - hopefully Pony will GC it properly.
+      // If not, try String.copy_cstring.
       //Array[U8].from_cstring( result, vlen )
       String.from_cstring( result, vlen )
     end
@@ -431,26 +433,30 @@ class LevelDB
     else
       @leveldb_free( err )
     end
+
+  fun ref error_val(): String ref^ ? =>
+	  if errptr.is_null() then error
+  else
+	  String.copy_cstring( errptr )
+  end
   
-  fun ref error_val(): String ref^ =>
-    if _errptr.is_null() then ""
-    else
-      String.copy_cstring( _errptr )
-    end
 
   fun ref delete( key: String ) ? =>
     """
     Remove the record with the specified key.
     """
-    _errptr = Pointer[U8].create()
+    errptr = Pointer[U8].create()
     // No options for now.
     let opts = @leveldb_options_create()
     @leveldb_delete( _dbhandle, opts,
         key.cstring(), key.size(),
-        addressof _errptr )
+        addressof errptr )
     @leveldb_options_destroy( opts )
-    chkerror( _errptr )
+    chkerror( errptr )
     
   fun ref close() =>
+    """
+    Close the database connection.
+    """
     @leveldb_close( _dbhandle )
 		
