@@ -2,12 +2,12 @@ actor Main
   new create( env: Env ) =>
     try
       let db = LevelDB.create( "test.ldb" )
-      db.put( "Orange", "fruit" )
-      db.put( "Apple", "fruit" )
-      db.put( "Zuccini", "vegetable" )
+      db( "Orange" ) = "fruit" 
+      db( "Apple" ) = "fruit" 
+      db( "Zuccini") = "vegetable"
 
       // Read back some of the data.
-      for key in ["Orange", "Zuccini"] do
+      for key in ["Orange", "Zuccini"].values() do
         try
 	  let value = db( key )
 	  env.out.print(key + "=" + value)

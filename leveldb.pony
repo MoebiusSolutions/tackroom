@@ -56,10 +56,10 @@ use @leveldb_put[None]( db: Pointer[U8] tag,
     const leveldb_writeoptions_t* options,
     const char* key, size_t keylen,
     char** errptr); */
-use @leveldb_delete[None]( db: Pointer[U8],
+use @leveldb_delete[None]( db: Pointer[U8] tag,
     wopts: Pointer[U8],
-    key: Pointer[U8], keylen: U32,
-    errptr: Pointer[U8] )
+    key: Pointer[U8] tag, keylen: USize,
+    errptr: Pointer[Pointer[U8]] )
 
 /* extern void leveldb_write(
     leveldb_t* db,
@@ -434,3 +434,20 @@ class LevelDB
     else
       recover val String.copy_cstring( _errptr ) end
     end
+
+  fun ref delete( key: String ) ? =>
+    """
+    Remove the record with the specified key.
+    """
+    _errptr = Pointer[U8].create()
+    // No options for now.
+    let opts = @leveldb_options_create()
+    @leveldb_delete( _dbhandle, opts,
+        key.cstring(), key.size(),
+        addressof _errptr )
+    @leveldb_options_destroy( opts )
+    chkerror( _errptr )
+    
+  fun ref close() =>
+    @leveldb_close( _dbhandle )
+		
