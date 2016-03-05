@@ -32,9 +32,9 @@ use "lib:libleveldb"
     const leveldb_options_t* options,
     const char* name,
     char** errptr); */
-use @leveldb_open[Pointer[None] tag]( ropts: Pointer[U8],
-    name: Pointer[U8],
-    errptr: Pointer[U8] )
+use @leveldb_open[Pointer[U8] tag]( ropts: Pointer[U8] tag,
+    name: Pointer[U8] tag,
+    errptr: Pointer[Pointer[U8]] )
 
 /* extern void leveldb_close(leveldb_t* db); */
 use @leveldb_close[None]( db: Pointer[U8] tag )
@@ -45,11 +45,11 @@ use @leveldb_close[None]( db: Pointer[U8] tag )
     const char* key, size_t keylen,
     const char* val, size_t vallen,
     char** errptr); */
-use @leveldb_put[None]( db: Pointer[U8] val,
+use @leveldb_put[None]( db: Pointer[U8] tag,
     wopts: Pointer[U8],
-    key: Pointer[U8], keylen: U32,
-    value: Pointer[U8], valuelen: U32,
-    errptr: Pointer[U8] )
+    key: Pointer[U8] tag, keylen: USize,
+    value: Pointer[U8] tag, valuelen: USize,
+    errptr: Pointer[Pointer[U8]] )
 
 /* extern void leveldb_delete(
     leveldb_t* db,
@@ -77,11 +77,11 @@ extern char* leveldb_get(
     const char* key, size_t keylen,
     size_t* vallen,
     char** errptr); */
-use @leveldb_get[Pointer[U8]]( db: Pointer[U8] val,
+use @leveldb_get[Pointer[U8]]( db: Pointer[U8] tag,
    ropts: Pointer[U8],
-   key: Pointer[U8], keylen: U32,
-   valuelen: U32,
-   errptr: Pointer[U8] )
+   key: Pointer[U8] tag, keylen: USize,
+   valuelen: Pointer[USize],
+   errptr: Pointer[Pointer[U8]] )
 
 /* extern leveldb_iterator_t* leveldb_create_iterator(
     leveldb_t* db,
@@ -129,21 +129,22 @@ use @leveldb_create_iterator[Pointer[U8]]( db: Pointer[U8],
 /* Iterator */
 
 /* extern void leveldb_iter_destroy(leveldb_iterator_t*); */
-use @leveldb_iter_destroy[None]( iter: Pointer[U8] )
+use @leveldb_iter_destroy[None]( iter: Pointer[U8] tag )
 /* extern unsigned char leveldb_iter_valid(const leveldb_iterator_t*); */
 /* extern void leveldb_iter_seek_to_first(leveldb_iterator_t*); */
 /* extern void leveldb_iter_seek_to_last(leveldb_iterator_t*); */
 /* extern void leveldb_iter_seek(leveldb_iterator_t*, const char* k, size_t klen); */
 // extern void leveldb_iter_next(leveldb_iterator_t*);
-use @leveldb_iter_next[None]( iter: Pointer[U8] )
+use @leveldb_iter_next[None]( iter: Pointer[U8] tag )
 // extern void leveldb_iter_prev(leveldb_iterator_t*);
 // extern const char* leveldb_iter_key(const leveldb_iterator_t*, size_t* klen);
-use @leveldb_iter_key[Pointer[U8]]( iter: Pointer[U8] )
+use @leveldb_iter_key[Pointer[U8] val]( iter: Pointer[U8] tag )
 // extern const char* leveldb_iter_value(const leveldb_iterator_t*, size_t* vlen);
-use @leveldb_iter_value[Pointer[U8]]( iter: Pointer[U8] )
+use @leveldb_iter_value[Pointer[U8] val]( iter: Pointer[U8] tag )
 
 // extern void leveldb_iter_get_error(const leveldb_iterator_t*, char** errptr);
-use @leveldb_iter_get_error[None]( iter: Pointer[U8], errptr: Pointer[U8] )
+use @leveldb_iter_get_error[None]( iter: Pointer[U8] tag,
+    errptr: Pointer[Pointer[U8]] )
 
 /* Write batch */
 
@@ -166,7 +167,9 @@ use @leveldb_iter_get_error[None]( iter: Pointer[U8], errptr: Pointer[U8] )
 /* Options */
 
 /* extern leveldb_options_t* leveldb_options_create(); */
+use @leveldb_options_create[Pointer[U8]]()
 /* extern void leveldb_options_destroy(leveldb_options_t*); */
+use @leveldb_options_destroy[None]( opt: Pointer[U8] )
 /* extern void leveldb_options_set_comparator(
     leveldb_options_t*,
     leveldb_comparator_t*); */
@@ -174,9 +177,11 @@ use @leveldb_iter_get_error[None]( iter: Pointer[U8], errptr: Pointer[U8] )
     leveldb_options_t*,
     leveldb_filterpolicy_t*); */
 /* extern void leveldb_options_set_create_if_missing(
-    leveldb_options_t*, unsigned char); */
+leveldb_options_t*, unsigned char); */
+use @leveldb_options_set_create_if_missing[None]( opt: Pointer[U8], flag: U8 )
 /* extern void leveldb_options_set_error_if_exists(
     leveldb_options_t*, unsigned char); */
+use @leveldb_options_set_error_if_exists[None]( opt: Pointer[U8], flag: U8 )
 /* extern void leveldb_options_set_paranoid_checks(
     leveldb_options_t*, unsigned char); */
 /* extern void leveldb_options_set_env(leveldb_options_t*, leveldb_env_t*); */
@@ -304,13 +309,13 @@ class LDBpair is Iterator[(String,String)]
 
 class LDBcursor
   let _db: LevelDB
-  let _iter: Pointer[U8]
+  let _iter: Pointer[U8] tag
   var _errptr: Pointer[U8]
 
   new create( db': LevelDB, iter': Pointer[U8] ) =>
     _db = db'
     _iter = iter'
-    _errptr = Pointer.create()
+    _errptr = Pointer[U8].create()
 
   fun ref pairs():  LDBpair => LDBpair( this )
   fun ref keys():   LDBkey =>  LDBkey( this )
@@ -327,45 +332,100 @@ class LDBcursor
     so has_next always returns 'true' and we do the real test here.
     """
     @leveldb_iter_next( _iter )
-    _errptr = Pointer.create()
+    _errptr = Pointer[U8].create()
     @leveldb_iter_get_error( _iter, addressof _errptr )
     if not _errptr.is_null() then error end	  
 
-  fun ref get_value(): String =>
+  fun get_value(): String =>
     """
     Fetch the value stored at the current iterator location
     """
-    String.from_cstring(@leveldb_iter_value( _iter ))
+    let ptr = @leveldb_iter_value( _iter )
+    recover val
+      String.copy_cstring(ptr)
+    end
 
   fun ref get_key(): String =>
     """
     Fetch the key stored at the current iterator location
     """
-    String.from_cstring(@leveldb_iter_key( _iter ))
+    let ptr = @leveldb_iter_key( _iter )
+    recover val
+      String.copy_cstring(ptr)
+    end
 
 class LevelDB
   """
   Represents an open connection to a LevelDB database.
   """
-  let _handle: Pointer[U8]
-  var _error: Pointer[U8]
+  let _dbhandle: Pointer[U8] tag
+  var _errptr: Pointer[U8]
 
-  new create( name: String ) =>
-    _handle = @leveldb_open( name._ptr, name._size )
-    _error = 0
+  new create( name: String ) ? =>
+    """
+    Create a new LevelDB database
+    """
+    _errptr = Pointer[U8].create()
+    let opts = @leveldb_options_create()
+    @leveldb_options_set_error_if_exists( opts, U8(1) )
+    _dbhandle = @leveldb_open( opts, name.cstring(), addressof _errptr)
+    @leveldb_options_destroy( opts )
+    if not _errptr.is_null() then error end
+
+  new open( name: String ) ? =>
+    """
+    Open an existing LevelDB database.
+    """
+    _errptr = Pointer[U8].create()
+    let opts = @leveldb_options_create()
+    _dbhandle = @leveldb_open( opts, name.cstring(), addressof _errptr )
+    @leveldb_options_destroy( opts )
+    if not _errptr.is_null() then error end
  
-  fun put( wopts: Pointer[U8], key: ByteSeq, value: ByteSeq ) =>
-    @leveldb_put( _handle, wopts,
-      key.cstring(), key.size(),
-      value.cstring(), value.size(),
-      addressof errptr)
+  fun ref put( key: ByteSeq, value: ByteSeq ) ? =>
+    _errptr = Pointer[U8].create()
+    let opts = @leveldb_options_create()
+    @leveldb_put( _dbhandle, opts,
+		key.cstring(), key.size(),
+		value.cstring(), value.size(),
+		addressof _errptr)
+    @leveldb_options_destroy( opts )
+    if not _errptr.is_null() then error end
 
-  fun ref get( key: ByteSeq, ropts: Pointer[U8] = 0 ) =>
-    let iterator = @leveldb_get( _db, key.cstring(), key.size() )
-    LDBcursor.create( _db, _iterator )
+  fun ref apply( key: ByteSeq ): String ? =>
+    """
+    Fetch a single record, given the key.  This throws an error under
+    two conditions:  (1) the record is not there, (2) some other problem
+    ocurred.
+    """
+    var vlen: USize = 0
+    _errptr = Pointer[U8].create()
+    // No options for now.
+    let opts = @leveldb_options_create()
+    let result = @leveldb_get( _dbhandle, opts, key.cstring(), key.size(),
+	addressof vlen, addressof _errptr)
+    @leveldb_options_destroy( opts )
+    chkerror( _errptr )
 
-  fun ref error_val(): String =>
-    if _errptr == 0 then ""
+    if result.is_null() then
+      error
     else
-      String.from_cstring( _errptr )
+      // Create an Array for the buffer that was returned.  LevelDB did
+      // a 'malloc' of this data - hopefully Pony will GC it properly.	
+      //Array[U8].from_cstring( result, vlen )
+      String.from_cstring( result, vlen )
+    end
+
+  fun ref chkerror( err: Pointer[U8] ) ? =>
+    if err.is_null() then
+      @leveldb_free( err )
+      error
+    else
+      @leveldb_free( err )
+    end
+  
+  fun ref error_val(): String =>
+    if _errptr.is_null() then ""
+    else
+      recover val String.copy_cstring( _errptr ) end
     end

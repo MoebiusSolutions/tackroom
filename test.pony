@@ -6,12 +6,15 @@ actor Main
       db.put( "Apple", "fruit" )
       db.put( "Zuccini", "vegetable" )
 
-      // Read back the data starting at 'Orange'.  Records are sorted
-      // by key so the 'Apple' record should not be returned.
-      let cursor = db.get( "Orange" )
-      for (key,data) in cursor.pairs() do
-        env.out.print(data)
-        end
+      // Read back some of the data.
+      for key in ["Orange", "Zuccini"] do
+        try
+	  let value = db( key )
+	  env.out.print(key + "=" + value)
+	else
+	  env.out.print("Get failed for "+key)
+	end
+      end
 
       db.delete( "Apple" )
       db.close()
