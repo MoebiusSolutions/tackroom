@@ -397,25 +397,28 @@ class LevelDB
     @leveldb_options_destroy( opts )
     if not _errptr.is_null() then error end
 
-  fun ref apply( key: ByteSeq ): String ? =>
+  fun ref apply( key: ByteSeq ): String ref ? =>
     """
     Fetch a single record, given the key.  This throws an error under
     two conditions:  (1) the record is not there, (2) some other problem
     ocurred.
     """
+    // Initialize output fields
     var vlen: USize = 0
     _errptr = Pointer[U8].create()
     // No options for now.
     let opts = @leveldb_options_create()
     let result = @leveldb_get( _dbhandle, opts, key.cstring(), key.size(),
-	addressof vlen, addressof _errptr)
+    addressof vlen, addressof _errptr)
+    // Free the options structure
     @leveldb_options_destroy( opts )
+    // Check for errors
     chkerror( _errptr )
-
+    // result is null if record not found
     if result.is_null() then
       error
     else
-      // Create an Array for the buffer that was returned.  LevelDB did
+      // Create a String for the buffer that was returned.  LevelDB did
       // a 'malloc' of this data - hopefully Pony will GC it properly.	
       //Array[U8].from_cstring( result, vlen )
       String.from_cstring( result, vlen )
@@ -429,10 +432,10 @@ class LevelDB
       @leveldb_free( err )
     end
   
-  fun ref error_val(): String =>
+  fun ref error_val(): String ref^ =>
     if _errptr.is_null() then ""
     else
-      recover val String.copy_cstring( _errptr ) end
+      String.copy_cstring( _errptr )
     end
 
   fun ref delete( key: String ) ? =>
