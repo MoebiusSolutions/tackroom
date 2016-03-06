@@ -438,11 +438,9 @@ class LevelDB
     end
 
   fun ref chkerror( err: Pointer[U8] ) ? =>
-    if err.is_null() then
+    if not err.is_null() then
       @leveldb_free( err )
       error
-    else
-      @leveldb_free( err )
     end
 
   fun ref error_val(): String ref^ ? =>
