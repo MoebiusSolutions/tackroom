@@ -250,9 +250,12 @@ enum {
 /* Write options */
 
 /* extern leveldb_writeoptions_t* leveldb_writeoptions_create(); */
+use @leveldb_writeoptions_create[Pointer[U8]]()
 /* extern void leveldb_writeoptions_destroy(leveldb_writeoptions_t*); */
+use @leveldb_writeoptions_destroy[None]( opts: Pointer[U8] tag )
 /* extern void leveldb_writeoptions_set_sync(
     leveldb_writeoptions_t*, unsigned char); */
+use @leveldb_writeoptions_set_sync[None]( opts: Pointer[U8] tag, flag: U8)
 
 /* Cache */
 
@@ -362,11 +365,12 @@ class LevelDB
   let _dbhandle: Pointer[U8] tag
   var errtxt: String ref
   var errptr: Pointer[U8]
-
-  new create( name: String ) =>
+  let _syncwrite: Bool
+  new create( name: String, sync: Bool = false ) =>
     """
-    Create a new LevelDB database
+    Create a new LevelDB database or open an existing one.
     """
+    _syncwrite = sync
     errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     @leveldb_options_set_create_if_missing( opts, U8(1) )
@@ -380,10 +384,11 @@ class LevelDB
 
     //if not errptr.is_null() then error end
 
-  new open( name: String ) =>
+  new open( name: String, sync: Bool = false ) =>
     """
-    Open an existing LevelDB database.
+    Open an existing LevelDB database.  Error if not found.
     """
+    _syncwrite = sync
     errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr )
@@ -401,12 +406,16 @@ class LevelDB
 	    db( key ) = value
     """
     errptr = Pointer[U8].create()
-    let opts = @leveldb_options_create()
+    // The the synchronized write option.
+    let opts = @leveldb_writeoptions_create()
+    @leveldb_writeoptions_set_sync( opts,
+        (if _syncwrite then 1 else 0 end) )
+
     @leveldb_put( _dbhandle, opts,
 		key.cstring(), key.size(),
 		value.cstring(), value.size(),
 		addressof errptr)
-    @leveldb_options_destroy( opts )
+    @leveldb_writeoptions_destroy( opts )
     if not errptr.is_null() then error end
 
   fun ref apply( key: ByteSeq ): String ref ? =>

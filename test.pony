@@ -1,8 +1,10 @@
 actor Main
   new create( env: Env ) =>
-    let db = LevelDB.create( "testdb" )
-    env.out.print("Open error "+db.errtxt)
-      try
+    let db = LevelDB.create( "fruitdb" )
+    if db.errtxt.size() > 0 then
+      env.out.print("Open error "+db.errtxt)
+    end
+    try
         db( "Orange" ) = "fruit" 
         db( "Apple" ) = "fruit" 
         db( "Zuccini") = "vegetable"
