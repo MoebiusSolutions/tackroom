@@ -11,9 +11,14 @@ any byte sequences.
 Usage
 -----
 
-* Open a database.  LevelDB databases are file system *directories*.  
+* Open a database, creating one if it does not exist.  LevelDB databases are file system *directories*.  An optional second parameter is a **Bool** to enable synchronous writes (default *false*).
 ```
-     let db = LevelDB( "dirpath" )
+     let db = LevelDB.create( "dirpath" )
+```
+
+* Open a database but error if it does not exist.
+```
+     let db = LevelDB.open( "dirpath" )
 ```
 
 * Write a record.
@@ -31,10 +36,16 @@ Usage
       db.close()
 ```
 
+* Fetch the most recent error text.  It will be a null string if there was no error.
+```
+      let msg = db.errtxt
+```
+
 To do
 -----
 
 * Memory management, copying strings, freeing things
+* Range retreivals using iterators.
 * Use ByteSeq instead of String where possible for binary transparency
 * More of the management interface
 * Index tables
