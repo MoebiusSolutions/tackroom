@@ -358,7 +358,7 @@ class LDBcursor
       String.copy_cstring(ptr)
     end
 
-class LevelDB
+class LevelDB is PonyDB
   """
   Represents an open connection to a LevelDB database.
   """
