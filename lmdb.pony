@@ -1,192 +1,58 @@
-/** @file lmdb.h
- *	@brief Lightning memory-mapped database library
- *
- *	@mainpage	Lightning Memory-Mapped Database Manager (LMDB)
- *
- *	@section intro_sec Introduction
- *	LMDB is a Btree-based database management library modeled loosely on the
- *	BerkeleyDB API, but much simplified. The entire database is exposed
- *	in a memory map, and all data fetches return data directly
- *	from the mapped memory, so no malloc's or memcpy's occur during
- *	data fetches. As such, the library is extremely simple because it
- *	requires no page caching layer of its own, and it is extremely high
- *	performance and memory-efficient. It is also fully transactional with
- *	full ACID semantics, and when the memory map is read-only, the
- *	database integrity cannot be corrupted by stray pointer writes from
- *	application code.
- *
- *	The library is fully thread-aware and supports concurrent read/write
- *	access from multiple processes and threads. Data pages use a copy-on-
- *	write strategy so no active data pages are ever overwritten, which
- *	also provides resistance to corruption and eliminates the need of any
- *	special recovery procedures after a system crash. Writes are fully
- *	serialized; only one write transaction may be active at a time, which
- *	guarantees that writers can never deadlock. The database structure is
- *	multi-versioned so readers run with no locks; writers cannot block
- *	readers, and readers don't block writers.
- *
- *	Unlike other well-known database mechanisms which use either write-ahead
- *	transaction logs or append-only data writes, LMDB requires no maintenance
- *	during operation. Both write-ahead loggers and append-only databases
- *	require periodic checkpointing and/or compaction of their log or database
- *	files otherwise they grow without bound. LMDB tracks free pages within
- *	the database and re-uses them for new write operations, so the database
- *	size does not grow without bound in normal use.
- *
- *	The memory map can be used as a read-only or read-write map. It is
- *	read-only by default as this provides total immunity to corruption.
- *	Using read-write mode offers much higher write performance, but adds
- *	the possibility for stray application writes thru pointers to silently
- *	corrupt the database. Of course if your application code is known to
- *	be bug-free (...) then this is not an issue.
- *
- *	If this is your first time using a transactional embedded key/value
- *	store, you may find the \ref starting page to be helpful.
- *
- *	@section caveats_sec Caveats
- *	Troubleshooting the lock file, plus semaphores on BSD systems:
- *
- *	- A broken lockfile can cause sync issues.
- *	  Stale reader transactions left behind by an aborted program
- *	  cause further writes to grow the database quickly, and
- *	  stale locks can block further operation.
- *
- *	  Fix: Check for stale readers periodically, using the
- *	  #mdb_reader_check function or the \ref mdb_stat_1 "mdb_stat" tool.
- *	  Stale writers will be cleared automatically on most systems:
- *	  - Windows - automatic
- *	  - BSD, systems using SysV semaphores - automatic
- *	  - Linux, systems using POSIX mutexes with Robust option - automatic
- *	  Otherwise just make all programs using the database close it;
- *	  the lockfile is always reset on first open of the environment.
- *
- *	- On BSD systems or others configured with MDB_USE_SYSV_SEM or
- *	  MDB_USE_POSIX_SEM,
- *	  startup can fail due to semaphores owned by another userid.
- *
- *	  Fix: Open and close the database as the user which owns the
- *	  semaphores (likely last user) or as root, while no other
- *	  process is using the database.
- *
- *	Restrictions/caveats (in addition to those listed for some functions):
- *
- *	- Only the database owner should normally use the database on
- *	  BSD systems or when otherwise configured with MDB_USE_POSIX_SEM.
- *	  Multiple users can cause startup to fail later, as noted above.
- *
- *	- There is normally no pure read-only mode, since readers need write
- *	  access to locks and lock file. Exceptions: On read-only filesystems
- *	  or with the #MDB_NOLOCK flag described under #mdb_env_open().
- *
- *	- An LMDB configuration will often reserve considerable \b unused
- *	  memory address space and maybe file size for future growth.
- *	  This does not use actual memory or disk space, but users may need
- *	  to understand the difference so they won't be scared off.
- *
- *	- By default, in versions before 0.9.10, unused portions of the data
- *	  file might receive garbage data from memory freed by other code.
- *	  (This does not happen when using the #MDB_WRITEMAP flag.) As of
- *	  0.9.10 the default behavior is to initialize such memory before
- *	  writing to the data file. Since there may be a slight performance
- *	  cost due to this initialization, applications may disable it using
- *	  the #MDB_NOMEMINIT flag. Applications handling sensitive data
- *	  which must not be written should not use this flag. This flag is
- *	  irrelevant when using #MDB_WRITEMAP.
- *
- *	- A thread can only use one transaction at a time, plus any child
- *	  transactions.  Each transaction belongs to one thread.  See below.
- *	  The #MDB_NOTLS flag changes this for read-only transactions.
- *
- *	- Use an MDB_env* in the process which opened it, without fork()ing.
- *
- *	- Do not have open an LMDB database twice in the same process at
- *	  the same time.  Not even from a plain open() call - close()ing it
- *	  breaks flock() advisory locking.
- *
- *	- Avoid long-lived transactions.  Read transactions prevent
- *	  reuse of pages freed by newer write transactions, thus the
- *	  database can grow quickly.  Write transactions prevent
- *	  other write transactions, since writes are serialized.
- *
- *	- Avoid suspending a process with active transactions.  These
- *	  would then be "long-lived" as above.  Also read transactions
- *	  suspended when writers commit could sometimes see wrong data.
- *
- *	...when several processes can use a database concurrently:
- *
- *	- Avoid aborting a process with an active transaction.
- *	  The transaction becomes "long-lived" as above until a check
- *	  for stale readers is performed or the lockfile is reset,
- *	  since the process may not remove it from the lockfile.
- *
- *	  This does not apply to write transactions if the system clears
- *	  stale writers, see above.
- *
- *	- If you do that anyway, do a periodic check for stale readers. Or
- *	  close the environment once in a while, so the lockfile can get reset.
- *
- *	- Do not use LMDB databases on remote filesystems, even between
- *	  processes on the same host.  This breaks flock() on some OSes,
- *	  possibly memory map sync, and certainly sync between programs
- *	  on different hosts.
- *
- *	- Opening a database can fail if another process is opening or
- *	  closing it at exactly the same time.
- *
- *	@author	Howard Chu, Symas Corporation.
- *
- * @copyright Copyright 2011-2016 Howard Chu, Symas Corp. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted only as authorized by the OpenLDAP
- * Public License.
- *
- * A copy of this license is available in the file LICENSE in the
- * top-level directory of the distribution or, alternatively, at
- * <http://www.OpenLDAP.org/license.html>.
- *
- * @par Derived From:
- * This code is derived from btree.c written by Martin Hedenfalk.
- *
- * Copyright (c) 2009, 2010 Martin Hedenfalk <martin@bzero.se>
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose with or without fee is hereby granted, provided that the above
- * copyright notice and this permission notice appear in all copies.
- *
- * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- */
-
 // Library major version 0.9.70
 // The release date of this library version "December 19, 2015"
 
-/** @brief Opaque structure for a database environment.
- *
- * A DB environment supports multiple databases, all residing in the same
- * shared-memory map.
- */
+use @mdb_strerror[Pointer[U8]]( err: USize )
+use @mdb_env_create[USize]( env: Pointer[Pointer[U8]] )
+use @mdb_version( Pointer[USize], Pointer[USize], Pointer[USize] )
+use @mdb_env_stat[None]( mdb: Pointer[MDB_env],
+	stat: Pointer[Poiter[MDB_stat]] )
+use @mdb_env_open[USize]( env: Pointer[U8] tag,
+    path: Pointer[U8], flags: USize, mode: USize )
+use @mdb_env_copy[USize]( env: Pointer[MDB_env], path: Pointer[U8] )
+use @mdb_env_copy2[USize]( env: Pointer[MDB_env], path: Pointer[U8], flags: USize )
+use @mdb_env_stat( env: Pointer[U8], stat: Pointer[U8] )
+use @mdb_env_info[USize]( env: Pointer[MDB_env] tag,
+    stat: Pointer[MDB_info] )
+use @mdb_env_sync[USize]( env: Pointer[MDB_env], force )
+use @mdb_env_close[None]( env: Pointer[MDB_env] )
+use @mdb_env_set_flags[USize]( env: Pointer[MDB_env], flags: USize, onoff: USize)
+use @mdb_env_get_flags[USize]( env: Pointer[MDB_env], flags: Pointer[USize] )
+use @mdb_env_get_path[USize]( env: Pointer[MDB_env], path: Pointer[Pointer[U8]] )
+use @mdb_env_set_mapsize[USize]( env:Pointer[MDB_env], size: USize )
+use @mdb_env_set_maxreaders[USize]( env: Pointer[MDB_env], count: USize )
+use @mdb_env_get_maxreaders[USize]( env: Pointer[MDB_env] )
+use @mdb_env_set_maxdbs[USize]( env: Pointer[MDB_env], count: USize )
+use @mdb_env_get_maxkeysize[USize]( enc: Pointer[MDB_env] );
+use @mdb_env_set_userctx[USize]( env: Pointer[MDB_env], ctx: Pointer[Any] )
+use @mdb_env_get_userctx[ Pointer[Any] ]( env: Pointer[MDB_env] )
+
+use @mdb_txn_begin[USize]( env: Pointer[MDB_env], parent: Pointer[MDB_txn],
+   flags: USize, txn: Pointer[Pointer[MDB_txn]] )
+use @mdb_txn_id[USize]( txn: Pointer[MDB_txn] )   
+use @mdb_txn_commit( txn: Pointer[MDB_txn] )
+use @mdb_txn_abort[None]( txn: Pointer[MDB_txn] )
+
+use @mdb_dbi_open( Pointer[MDB_txn],
+	name: Pointer[U8],
+	flags: USize,
+	dbi: Pointer[Pointer[MDB_dbi]] )
+use @mdb_cursor_dbi[Pointer[MDB_dbi]]( Pointer[MDB_cur] )
+use @mdb_cursor_get[USize]( curs: Pointer[MDB_cur],
+   key: Pointer[MDB_value], data: Pointer[MDB_value],
+   op: MDB_cursor_op )
+use @mdb_cursor_put( cursor: Pointer[MDB_cur],
+    key: Pointer[MDB_value], data: Pointer[MDB_value],
+    flags: USize = 0 )
+use @mdb_cursor_del( mdb: Pointer[U8], flags: USize )
+use @mdb_cursor_count[USize]( mdb: Pointer[U8], count: Pointer[USize] )
+
+// Opaque structures for actual LMDB handles.
 primitive MDB_env
-
-/** @brief Opaque structure for a transaction handle.
- *
- * All database operations require a transaction handle. Transactions may be
- * read-only or read-write.
- */
 primitive MDB_txn
-
-/** @brief A handle for an individual database in the DB environment. */
 primitive MDB_dbi
+primitive MDB_cur
 
-/** @brief Opaque structure for navigating through a database */
-primitive MDB_cursor
-
-/** @brief Generic structure used for passing keys and data in and out
+/** Generic structure used for passing keys and data in and out
  * of the database.
  *
  * Values returned from the database are valid only until a subsequent
@@ -196,11 +62,7 @@ primitive MDB_cursor
  * Key sizes must be between 1 and #mdb_env_get_maxkeysize() inclusive.
  * The same applies to data sizes in databases with the #MDB_DUPSORT flag.
  * Other data items can in theory be from 0 to 0xffffffff bytes long.
- 
-typedef struct MDB_value {
-	size_t		 mv_size;	/**< size of the data item */
-	void		*mv_data;	/**< address of the data item */
-} MDB_val; */
+ */
 class MDB_val
   var size: USize = 0
   var data: Pointer[U8]
@@ -209,27 +71,7 @@ class MDB_val
     data = data'
   new create() => None
 	    
-/** @brief A callback function used to compare two keys in a database */
-//typedef int  (MDB_cmp_func)(const MDB_val *a, const MDB_val *b);
-
-/** @brief A callback function used to relocate a position-dependent data item
- * in a fixed-address database.
- *
- * The \b newptr gives the item's desired address in
- * the memory map, and \b oldptr gives its previous address. The item's actual
- * data resides at the address in \b item.  This callback is expected to walk
- * through the fields of the record in \b item and modify any
- * values based at the \b oldptr address to be relative to the \b newptr address.
- * @param[in,out] item The item that is to be relocated.
- * @param[in] oldptr The previous address.
- * @param[in] newptr The new address to relocate to.
- * @param[in] relctx An application-provided context, set by #mdb_set_relctx().
- * @todo This feature is currently unimplemented.
- */
-//typedef void (MDB_rel_func)(MDB_val *item, void *oldptr, void *newptr, void *relctx);
-
-/** @defgroup	mdb_env	Environment Flags
- */
+//  Flags on creating an environment
 primitive MDB_env_flag
   fun fixedmap() => 0x01   // mmap at a fixed address (experimental)
   fun nosubdir() => 0x400  // no environment directory
@@ -245,9 +87,7 @@ primitive MDB_env_flag
   fun nordahead() => 0x800000 // don't do readahead (no effect on Windows)
   fun nomeminit() => 0x1000000 // don't initialize malloc'd memory before writing to datafile
 
-/**	@defgroup	mdb_dbi_open	Database Flags
- *	@{
- */
+// Flags on opening a database.  These can be combined.
 primitive MDB_open_flag
   fun reversekey() => 0x02   // use reverse string keys */
   fun dupsort() => 0x04     // use sorted duplicates */
@@ -257,9 +97,7 @@ primitive MDB_open_flag
   fun reversedup() => 0x40 // with #MDB_DUPSORT, use reverse string dups */
   fun create() => 0x40000  // create DB if not already existing */
 
-/**	@defgroup mdb_put	Write Flags
- *	@{
- */
+// Flags on write operations.
 primitive MDB_put_flag
   fun nooverwrite() => 0x10 // For put: Don't write if the key already exists.
   fun nodupdata() => 0x20 // Only for #MDB_DUPSORT:
@@ -272,20 +110,12 @@ primitive MDB_put_flag
   fun appenddup() => 0x40000 // Duplicate data is being appended, don't split full pages.
   fun multiple() => 0x80000 // Store multiple data items in one call. Only for #MDB_DUPFIXED.
 
-/**	@defgroup mdb_copy	Copy Flags
- *	@{
- */
-/** Compacting copy: Omit free space from copy, and renumber all
- * pages sequentially.
- */
-#define MDB_CP_COMPACT	0x01
-/*	@} */
+// Flags on copy operations
+primitive MDB_copy_flag
+  fun compact() => 0x01  // Omit free space from copy, and renumber all
+	                 // pages sequentially.
 
-/** @brief Cursor Get operations.
- *
- *	This is the set of all operations for retrieving data
- *	using a cursor.
- */
+// Op-codes for cursor operations.			 
 primitive MDB_cursor_op
   fun first(): USize => 0           // Position at first key/data item
   fun first_dup(): USize => 1       // Position at first data item of current key.
@@ -305,40 +135,8 @@ primitive MDB_cursor_op
   fun set_key(): USize => 15
   fun set_range(): USize => 16
   fun prev_multiple(): USize => 17
-/*		
 
-	MDB_FIRST_DUP,		//< 
-		//Only for #MDB_DUPSORT */
-	MDB_GET_BOTH,		//< Position at key/data pair. Only for #MDB_DUPSORT */
-	MDB_GET_BOTH_RANGE,	//< position at key, nearest data. Only for #MDB_DUPSORT */
-	MDB_GET_CURRENT,	//< Return key/data at current cursor position */
-	MDB_GET_MULTIPLE,	//< Return key and up to a page of duplicate data items
-				// from current cursor position. Move cursor to prepare
-				// for #MDB_NEXT_MULTIPLE. Only for #MDB_DUPFIXED */
-	MDB_LAST,		//< Position at last key/data item */
-	MDB_LAST_DUP,		//< Position at last data item of current key.
-				//Only for #MDB_DUPSORT */
-	MDB_NEXT,		//< Position at next data item */
-	MDB_NEXT_DUP,		//< Position at next data item of current key.
-				// Only for #MDB_DUPSORT */
-	MDB_NEXT_MULTIPLE,		//< Return key and up to a page of duplicate data items
-								from next cursor position. Move cursor to prepare
-								for #MDB_NEXT_MULTIPLE. Only for #MDB_DUPFIXED */
-	MDB_NEXT_NODUP,			//< Position at first data item of next key */
-	MDB_PREV,				//< Position at previous data item */
-	MDB_PREV_DUP,			//< Position at previous data item of current key.
-								Only for #MDB_DUPSORT */
-	MDB_PREV_NODUP,			//< Position at last data item of previous key */
-	MDB_SET,				//< Position at specified key */
-	MDB_SET_KEY,			//< Position at specified key, return key + data */
-	MDB_SET_RANGE,			//< Position at first key greater than or equal to specified key. */
-	MDB_PREV_MULTIPLE		//< Position at previous page and return key and up to
-								a page of duplicate data items. Only for #MDB_DUPFIXED */
-} MDB_cursor_op;
-
-/** @brief Statistics for a database in the environment */
-use @mdb_env_stat[None]( mdb: Pointer[MDB_env],
-	stat: Pointer[Poiter[MDB_stat]] )
+// Environment statistics
 class MDB_stat
   var psize: USize = 0
   var depth: USize = 0
@@ -348,7 +146,8 @@ class MDB_stat
   var entries: USize = 0
   new create( mdb: Pointer[U8] tag ) =>
     @mdb_env_stat( mdb, addressof this )
-	  
+
+// Environment info
 class MDB_envinfo
   var mapaddr: Pointer[U8] = Pointer[U8]() // Address of map, if fixed
   var mapsize: USize = 0     // Size of mapped area
@@ -356,196 +155,48 @@ class MDB_envinfo
   var last_txid: USize = 0   // ID of last commited transaction
   var maxreaders: USize = 0  // Max reader slots
   var numreaders: USize = 0  // Number of used slots
-  new create( mdb: Pointer[U8] tag ) =>
-    @mdb_env_info( msb, addressof this )
-	
-use @mdb_version( Pointer[USize], Pointer[USize], Pointer[USize] )
+  new create() => None
+
+// Get LMDB version
 class MDB_version
   var major: USize = 0
   var minor: USize = 0
   var patch: USize = 0
   new create() =>
     @mdb_version( addressof major, addressof minor, addressof patch )
- 
-/* @brief Return a string describing a given error code.
- *
- * This function is a superset of the ANSI C X3.159-1989 (ANSI C) strerror(3)
- * function. If the error code is greater than or equal to 0, then the string
- * returned by the system function strerror(3) is returned. If the error code
- * is less than 0, an error string corresponding to the LMDB library error is
- * returned. See @ref errors for a list of LMDB-specific error codes.
- * @param[in] err The error code
- * @retval "error message" The description of the error
- */
-use @mdb_strerror[Pointer[U8]]( err: USize )
+
   fun ref errstr(): String =>
     String.from_cstring( @mdb_errstr( _errcode ) )
-	
-/* @brief Create an LMDB environment handle.
- *
- * This function allocates memory for a #MDB_env structure. To release
- * the allocated memory and discard the handle, call #mdb_env_close().
- * Before the handle may be used, it must be opened using #mdb_env_open().
- * Various other options may also need to be set before opening the handle,
- * e.g. #mdb_env_set_mapsize(), #mdb_env_set_maxreaders(), #mdb_env_set_maxdbs(),
- * depending on usage requirements.
- * @param[out] env The address where the new handle will be stored
- * @return A non-zero error value on failure and 0 on success.
- */
-use @mdb_env_create[USize]( env: Pointer[Pointer[U8]] )
-class MDB_enviroment
+
+class MDBEnvironment
+  """
+  The LMDB Environment consists of a single (large) region of virtual memory
+  that is mapped file.   All LMDB operations take place within this Environment.
+  """
   var _mdbenv: Pointer[MDB_env]
+
   new create() =>
     let errcode = @mdb_env_create( addressof _mdbenv )
+
+  fun ref open( path: String, flags: USize, mode: USize ) =>
+    """
+    Open the environment.  This corresponds to a single mapped file which
+    can contain one or more databases.
+    """
+    @mdb_env_open( _mdbenv, path.cstring(), flags, mode )
 		
-/* @brief Open an environment handle.
- *
- * If this function fails, #mdb_env_close() must be called to discard the #MDB_env handle.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] path The directory in which the database files reside. This
- * directory must already exist and be writable.
- * @param[in] flags Special options for this environment. This parameter
- * must be set to 0 or by bitwise OR'ing together one or more of the
- * values described here.
- * Flags set by mdb_env_set_flags() are also used.
- * <ul>
- *	<li>#MDB_FIXEDMAP
- *      use a fixed address for the mmap region. This flag must be specified
- *      when creating the environment, and is stored persistently in the environment.
- *	If successful, the memory map will always reside at the same virtual address
- *	and pointers used to reference data items in the database will be constant
- *	across multiple invocations. This option may not always work, depending on
- *	how the operating system has allocated memory to shared libraries and other uses.
- *	The feature is highly experimental.
- *	<li>#MDB_NOSUBDIR
- *	By default, LMDB creates its environment in a directory whose
- *	pathname is given in \b path, and creates its data and lock files
- *	under that directory. With this option, \b path is used as-is for
- *	the database main data file. The database lock file is the \b path
- *	with "-lock" appended.
- *<li>#MDB_RDONLY
- *	Open the environment in read-only mode. No write operations will be
- *	allowed. LMDB will still modify the lock file - except on read-only
- *	filesystems, where LMDB does not use locks.
- *<li>#MDB_WRITEMAP
- *	Use a writeable memory map unless MDB_RDONLY is set. This uses
- *	fewer mallocs but loses protection from application bugs
- *	like wild pointer writes and other bad updates into the database.
- *	This may be slightly faster for DBs that fit entirely in RAM, but
- *	is slower for DBs larger than RAM.
- *	Incompatible with nested transactions.
- *	Do not mix processes with and without MDB_WRITEMAP on the same
- *	environment.  This can defeat durability (#mdb_env_sync etc).
- *<li>#MDB_NOMETASYNC
- *	Flush system buffers to disk only once per transaction, omit the
- *	metadata flush. Defer that until the system flushes files to disk,
- *	or next non-MDB_RDONLY commit or #mdb_env_sync(). This optimization
- *	maintains database integrity, but a system crash may undo the last
- *	committed transaction. I.e. it preserves the ACI (atomicity,
- *	consistency, isolation) but not D (durability) database property.
- *	This flag may be changed at any time using #mdb_env_set_flags().
- *<li>#MDB_NOSYNC
- *	Don't flush system buffers to disk when committing a transaction.
- *	This optimization means a system crash can corrupt the database or
- *	lose the last transactions if buffers are not yet flushed to disk.
- *	The risk is governed by how often the system flushes dirty buffers
- *	to disk and how often #mdb_env_sync() is called.  However, if the
- *	filesystem preserves write order and the #MDB_WRITEMAP flag is not
- *	used, transactions exhibit ACI (atomicity, consistency, isolation)
- *	properties and only lose D (durability).  I.e. database integrity
- *	is maintained, but a system crash may undo the final transactions.
- *	Note that (#MDB_NOSYNC | #MDB_WRITEMAP) leaves the system with no
- *	hint for when to write transactions to disk, unless #mdb_env_sync()
- *	is called. (#MDB_MAPASYNC | #MDB_WRITEMAP) may be preferable.
- *	This flag may be changed at any time using #mdb_env_set_flags().
- *<li>#MDB_MAPASYNC
- *	When using #MDB_WRITEMAP, use asynchronous flushes to disk.
- *	As with #MDB_NOSYNC, a system crash can then corrupt the
- *	database or lose the last transactions. Calling #mdb_env_sync()
- *	ensures on-disk database integrity until next commit.
- *	This flag may be changed at any time using #mdb_env_set_flags().
- *<li>#MDB_NOTLS
- *	Don't use Thread-Local Storage. Tie reader locktable slots to
- *	#MDB_txn objects instead of to threads. I.e. #mdb_txn_reset() keeps
- *	the slot reseved for the #MDB_txn object. A thread may use parallel
- *	read-only transactions. A read-only transaction may span threads if
- *	the user synchronizes its use. Applications that multiplex many
- *	user threads over individual OS threads need this option. Such an
- *	application must also serialize the write transactions in an OS
- *	thread, since LMDB's write locking is unaware of the user threads.
- *<li>#MDB_NOLOCK
- *	Don't do any locking. If concurrent access is anticipated, the
- *	caller must manage all concurrency itself. For proper operation
- *	the caller must enforce single-writer semantics, and must ensure
- *	that no readers are using old transactions while a writer is
- *	active. The simplest approach is to use an exclusive lock so that
- *	no readers may be active at all when a writer begins.
- *<li>#MDB_NORDAHEAD
- *	Turn off readahead. Most operating systems perform readahead on
- *	read requests by default. This option turns it off if the OS
- *	supports it. Turning it off may help random read performance
- *	when the DB is larger than RAM and system RAM is full.
- *	The option is not implemented on Windows.
- *<li>#MDB_NOMEMINIT
- *	Don't initialize malloc'd memory before writing to unused spaces
- *	in the data file. By default, memory for pages written to the data
- *	file is obtained using malloc. While these pages may be reused in
- *	subsequent transactions, freshly malloc'd pages will be initialized
- *	to zeroes before use. This avoids persisting leftover data from other
- *	code (that used the heap and subsequently freed the memory) into the
- *	data file. Note that many other system libraries may allocate
- *	and free memory from the heap for arbitrary uses. E.g., stdio may
- *	use the heap for file I/O buffers. This initialization step has a
- *	modest performance cost so some applications may want to disable
- *	it using this flag. This option can be a problem for applications
- *	which handle sensitive data like passwords, and it makes memory
- *	checkers like Valgrind noisy. This flag is not needed with #MDB_WRITEMAP,
- *	which writes directly to the mmap instead of using malloc for pages. The
- *	initialization is also skipped if #MDB_RESERVE is used; the
- *	caller is expected to overwrite all of the memory that was
- *	reserved in that case.
- *	This flag may be changed at any time using #mdb_env_set_flags().
- * </ul>
- * @param[in] mode The UNIX permissions to set on created files and semaphores.
- * This parameter is ignored on Windows.
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>#MDB_VERSION_MISMATCH - the version of the LMDB library doesn't match the
- *	version that created the database environment.
- *	<li>#MDB_INVALID - the environment file headers are corrupted.
- *	<li>ENOENT - the directory specified by the path parameter doesn't exist.
- *	<li>EACCES - the user didn't have permission to access the environment files.
- *	<li>EAGAIN - the environment was locked by another process.
- * </ul>
- */
-// int  mdb_env_open(MDB_env *env, const char *path, unsigned int flags, mdb_mode_t mode);
-use @mdb_env_open[USize]( env: Pointer[U8] tag,
-    path: Pointer[U8], flags: USize, mode: USize )
+  fun ref copy( path: String, flags: USize = 0 ) =>
+    """
+    Make a copy of the entire environment.  This can be used to
+    create backups.
+    """
+    let err = (if flags == 0 then
+      @mdb_env_copy( _mdbenv, path.cstring() )
+    else
+      @mdb_env_copy( _mdbenv, path.cstring(), flags )
+    end)
 
-new open( env: Pointer[MDB_env],
-	path: String,
-	flags: USize,
-	mode: USize ) =>
-    let err = @mdb_env_open( env, path.cstring(), flags, mode )
-
-/* @brief Copy an LMDB environment to the specified path.
- *
- * This function may be used to make a backup of an existing environment.
- * No lockfile is created, since it gets recreated at need.
- * @note This call can trigger significant file size growth if run in
- * parallel with write transactions, because it employs a read-only
- * transaction. See long-lived transactions under @ref caveats_sec.
- * @param[in] env An environment handle returned by #mdb_env_create(). It
- * must have already been opened successfully.
- * @param[in] path The directory in which the copy will reside. This
- * directory must already exist and be writable but must otherwise be
- * empty.
- * @return A non-zero error value on failure and 0 on success.
- */
-// int  mdb_env_copy(MDB_env *env, const char *path);
-
-/* @brief Copy an LMDB environment to the specified file descriptor.
+ /* @brief Copy an LMDB environment to the specified file descriptor.
  *
  * This function may be used to make a backup of an existing environment.
  * No lockfile is created, since it gets recreated at need.
@@ -560,28 +211,6 @@ new open( env: Pointer[MDB_env],
  */
 // int  mdb_env_copyfd(MDB_env *env, mdb_filehandle_t fd);
 
-/* @brief Copy an LMDB environment to the specified path, with options.
- *
- * This function may be used to make a backup of an existing environment.
- * No lockfile is created, since it gets recreated at need.
- * @note This call can trigger significant file size growth if run in
- * parallel with write transactions, because it employs a read-only
- * transaction. See long-lived transactions under @ref caveats_sec.
- * @param[in] env An environment handle returned by #mdb_env_create(). It
- * must have already been opened successfully.
- * @param[in] path The directory in which the copy will reside. This
- * directory must already exist and be writable but must otherwise be
- * empty.
- * @param[in] flags Special options for this operation. This parameter
- * must be set to 0 or by bitwise OR'ing together one or more of the
- * values described here.
- * <ul>
- *	<li>#MDB_CP_COMPACT - Perform compaction while copying: omit free
- *	pages and sequentially renumber all pages in output. This option
- *	consumes more CPU and runs more slowly than the default.
- * </ul>
- * @return A non-zero error value on failure and 0 on success.
- */
 // int  mdb_env_copy2(MDB_env *env, const char *path, unsigned int flags);
 
 /* @brief Copy an LMDB environment to the specified file descriptor,
@@ -610,311 +239,165 @@ new open( env: Pointer[MDB_env],
  * 	where the statistics will be copied
  */
 //int  mdb_env_stat(MDB_env *env, MDB_stat *stat);
-use @mdb_env_stat( env: Pointer[U8], stat: Pointer[U8] )
 
-/* @brief Return information about the LMDB environment.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[out] stat The address of an #MDB_envinfo structure
- * 	where the information will be copied
- */
-int  mdb_env_info(MDB_env *env, MDB_envinfo *stat);
+  fun ref info(): MDBinfo =>
+    let info: MDBinfo = MDBinfo.create()
+    @mdb_env_info( _mdbenv, addressof info )
+    info
 
-/* @brief Flush the data buffers to disk.
- *
- * Data is always written to disk when #mdb_txn_commit() is called,
- * but the operating system may keep it buffered. LMDB always flushes
- * the OS buffers upon commit as well, unless the environment was
- * opened with #MDB_NOSYNC or in part #MDB_NOMETASYNC. This call is
- * not valid if the environment was opened with #MDB_RDONLY.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] force If non-zero, force a synchronous flush.  Otherwise
- *  if the environment has the #MDB_NOSYNC flag set the flushes
- *	will be omitted, and with #MDB_MAPASYNC they will be asynchronous.
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EACCES - the environment is read-only.
- *	<li>EINVAL - an invalid parameter was specified.
- *	<li>EIO - an error occurred during synchronization.
- * </ul>
- */
-int  mdb_env_sync(MDB_env *env, int force);
+  fun ref flush( force: Bool = false ) =>
+    let err = @mdb_env_sync( _mdbenv, force )
 
-/* @brief Close the environment and release the memory map.
- *
- * Only a single thread may call this function. All transactions, databases,
- * and cursors must already be closed before calling this function. Attempts to
- * use any such handles after calling this function will cause a SIGSEGV.
- * The environment handle will be freed and must not be used again after this call.
- * @param[in] env An environment handle returned by #mdb_env_create()
- */
-void mdb_env_close(MDB_env *env);
+  fun ref close() =>
+    @mdb_env_close( _mdbenv )
 
-/* @brief Set environment flags.
- *
- * This may be used to set some flags in addition to those from
- * #mdb_env_open(), or to unset these flags.  If several threads
- * change the flags at the same time, the result is undefined.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] flags The flags to change, bitwise OR'ed together
- * @param[in] onoff A non-zero value sets the flags, zero clears them.
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-int  mdb_env_set_flags(MDB_env *env, unsigned int flags, int onoff);
+  fun ref set_flags( flags: USize, set: Bool ) =>
+    """
+    Set or clear environment flags after it has been created.
+    """
+    if set then
+      @mdb_env_set_flags( _mdbenv, flags 1 )
+    else
+      @mdb_env_set_flags( _mdbenv, flags, 0 )
+    end
 
-/* @brief Get environment flags.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[out] flags The address of an integer to store the flags
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-int  mdb_env_get_flags(MDB_env *env, unsigned int *flags);
+  fun ref get_flags(): USize =>
+    var flags: USize = 0
+    let err = @mdb_env_get_flags( _mdbenv, addressof flags )
+    flags
 
-/* @brief Return the path that was used in #mdb_env_open().
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[out] path Address of a string pointer to contain the path. This
- * is the actual string in the environment, not a copy. It should not be
- * altered in any way.
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-int  mdb_env_get_path(MDB_env *env, const char **path);
+  fun ref get_path(): String =>
+    """
+    Get the file system path where the environment is stored.
+    """
+    var sptr: Pointer[U8] = Pointer[U8]()
+    let err = @mdb_env_get_path( _mdbenv, addressof sptr )
+    // We have to copy the string because it is in the mapped area.
+    String.copy_cstring( sptr )
 
-/* @brief Return the filedescriptor for the given environment.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[out] fd Address of a mdb_filehandle_t to contain the descriptor.
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-int  mdb_env_get_fd(MDB_env *env, mdb_filehandle_t *fd);
+  fun ref set_mapsize( size: USize ) =>
+    """
+    Set the size of the memory map to use for this environment.
+    The size should be a multiple of the OS page size. The default is
+    10485760 bytes. The size of the memory map is also the maximum size
+    of the database. The value should be chosen as large as possible,
+    to accommodate future growth of the database.
+    This function should be called after create and before open.
+    """
+    let err = @mdb_env_set_mapsize( _mdbenv, size )
 
-/* @brief Set the size of the memory map to use for this environment.
- *
- * The size should be a multiple of the OS page size. The default is
- * 10485760 bytes. The size of the memory map is also the maximum size
- * of the database. The value should be chosen as large as possible,
- * to accommodate future growth of the database.
- * This function should be called after #mdb_env_create() and before #mdb_env_open().
- * It may be called at later times if no transactions are active in
- * this process. Note that the library does not check for this condition,
- * the caller must ensure it explicitly.
- *
- * The new size takes effect immediately for the current process but
- * will not be persisted to any others until a write transaction has been
- * committed by the current process. Also, only mapsize increases are
- * persisted into the environment.
- *
- * If the mapsize is increased by another process, and data has grown
- * beyond the range of the current mapsize, #mdb_txn_begin() will
- * return #MDB_MAP_RESIZED. This function may be called with a size
- * of zero to adopt the new size.
- *
- * Any attempt to set a size smaller than the space already consumed
- * by the environment will be silently changed to the current size of the used space.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] size The size in bytes
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified, or the environment has
- *   	an active write transaction.
- * </ul>
- */
-int  mdb_env_set_mapsize(MDB_env *env, mdb_size_t size);
+  fun ref set_maxslots( count: USize ) =>
+    """
+    Set the maximum number of threads/reader slots for the environment.
+    This defines the number of slots in the lock table that is used to
+    track readers in the the environment. The default is 126.
+    Starting a read-only transaction normally ties a lock table slot to the
+    current thread until the environment closes or the thread exits. If
+    MDB_NOTLS is in use, #mdb_txn_begin() instead ties the slot to the
+    MDB_txn object until it or the #MDB_env object is destroyed.
+    This function may only be called after create() and before open().
+    """
+    let err = @mdb_env_set_maxreaders( _mdbenv, count )
 
-/* @brief Set the maximum number of threads/reader slots for the environment.
- *
- * This defines the number of slots in the lock table that is used to track readers in the
- * the environment. The default is 126.
- * Starting a read-only transaction normally ties a lock table slot to the
- * current thread until the environment closes or the thread exits. If
- * MDB_NOTLS is in use, #mdb_txn_begin() instead ties the slot to the
- * MDB_txn object until it or the #MDB_env object is destroyed.
- * This function may only be called after #mdb_env_create() and before #mdb_env_open().
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] readers The maximum number of reader lock table slots
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified, or the environment is already open.
- * </ul>
- */
-int  mdb_env_set_maxreaders(MDB_env *env, unsigned int readers);
+  fun ref slots() =>
+    """
+    Get the maximum number of threads/reader slots for the environment.
+    """
+    var count: USize = 0
+    let err = @mdb_env_get_maxreaders( _mdbenv, addressof count )
+    count
 
-/* @brief Get the maximum number of threads/reader slots for the environment.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[out] readers Address of an integer to store the number of readers
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-int  mdb_env_get_maxreaders(MDB_env *env, unsigned int *readers);
+  fun ref set_maxdb( count: USize ) =>
+    """
+    Set the maximum number of named databases for the environment.
+    This function is only needed if multiple databases will be used in the
+    environment. Simpler applications that use the environment as a single
+    unnamed database can ignore this option.
+    This function may only be called after create and before open.
+    Currently a moderate number of slots are cheap but a huge number gets
+    expensive: 7-120 words per transaction, and every DB open does a
+    linear search of the opened slots.
+    """
+    let err = @mdb_env_set_maxdbs( _mdbenv, count )
 
-/* @brief Set the maximum number of named databases for the environment.
- *
- * This function is only needed if multiple databases will be used in the
- * environment. Simpler applications that use the environment as a single
- * unnamed database can ignore this option.
- * This function may only be called after #mdb_env_create() and before #mdb_env_open().
- *
- * Currently a moderate number of slots are cheap but a huge number gets
- * expensive: 7-120 words per transaction, and every #mdb_dbi_open()
- * does a linear search of the opened slots.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] dbs The maximum number of databases
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified, or the environment is already open.
- * </ul>
- */
-int  mdb_env_set_maxdbs(MDB_env *env, MDB_dbi dbs);
+  fun ref maxkeysize(): USize =>
+    """
+    Get the maximum size of keys and #MDB_DUPSORT data we can write.
+    This depends on the compile-time constant #MDB_MAXKEYSIZE. Default 511.
+    """
+    @mdb_env_get_maxkeysize( _mdbenv )
 
-/* @brief Get the maximum size of keys and #MDB_DUPSORT data we can write.
- *
- * Depends on the compile-time constant #MDB_MAXKEYSIZE. Default 511.
- * See @ref MDB_val.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @return The maximum size of a key we can write
- */
-int  mdb_env_get_maxkeysize(MDB_env *env);
+  fun ref set_appinfo( info: Pointer[Any] ) =>
+    """
+    Set application information associated with the Evironment.
+    """
+    let err = @mdb_env_set_userctx( _mdbenv, info )
 
-/* @brief Set application information associated with the #MDB_env.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] ctx An arbitrary pointer for whatever the application needs.
- * @return A non-zero error value on failure and 0 on success.
- */
-int  mdb_env_set_userctx(MDB_env *env, void *ctx);
+  fun ref get_appinfo(): Pointer[Any] =>
+    """
+    Get the application information associated with the #MDB_env.
+    """
+    @mdb_env_get_userctx( _mdbenv )
 
-/* @brief Get the application information associated with the #MDB_env.
- *
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @return The pointer set by #mdb_env_set_userctx().
- */
-void *mdb_env_get_userctx(MDB_env *env);
+  fun ref begin( flags: USize,
+    parent: (MDBTransaction | None) = None ): MDBTransaction =>
+    """
+    Create a transaction within this environment.
+    """
+    var txnhdl: MDB_txn = 0
+    let err = (match parent
+      | None =>
+	  @mdb_txn_begin( _mdbenv, Pointer[U8](), flags, addressof txnhdl )
+      | let p: MDBTransaction =>
+          @mdb_txn_begin( _mdbenv, parent.handle(), flags, addressof txnhdl )
+    end)
+	
+    MDBTransaction.create( this, txnhdl )
+    
+class MDBTransaction
+  """
+  The transaction handle may be discarded using abort() or commit().
+  A transaction and its cursors must only be used by a single
+  thread, and a thread may only have a single transaction at a time.
+  If #MDB_NOTLS is in use, this does not apply to read-only transactions.
+  Cursors may not span transactions.
+  """
+  let _txn: MDB_txn
+  let _env: MDBEnvironment
+  new create( env: MDBEnvironment, txn: MDB_txn ) =>
+    _txn = txn
+    _env = env
 
-/* @brief A callback function for most LMDB assert() failures,
- * called before printing the message and aborting.
- *
- * @param[in] env An environment handle returned by #mdb_env_create().
- * @param[in] msg The assertion message, not including newline.
- */
-typedef void MDB_assert_func(MDB_env *env, const char *msg);
+  fun ref handle(): MDB_txn => _txn
 
-	// Set or reset the assert() callback of the environment.
- * Disabled if liblmdb is buillt with NDEBUG.
- * @note This hack should become obsolete as lmdb's error handling matures.
- * @param[in] env An environment handle returned by #mdb_env_create().
- * @param[in] func An #MDB_assert_func function, or 0.
- * @return A non-zero error value on failure and 0 on success.
- */
-int  mdb_env_set_assert(MDB_env *env, MDB_assert_func *func);
+  fun ref id(): USize =>
+    """
+    Return the transaction's ID.
+    This returns the identifier associated with this transaction. For a
+    read-only transaction, this corresponds to the snapshot being read;
+    concurrent readers will frequently have the same transaction ID.
+    """
+    @mdb_txn_id( _txn )
 
-/* @brief Create a transaction for use with the environment.
- *
- * The transaction handle may be discarded using #mdb_txn_abort() or #mdb_txn_commit().
- * @note A transaction and its cursors must only be used by a single
- * thread, and a thread may only have a single transaction at a time.
- * If #MDB_NOTLS is in use, this does not apply to read-only transactions.
- * @note Cursors may not span transactions.
- * @param[in] env An environment handle returned by #mdb_env_create()
- * @param[in] parent If this parameter is non-NULL, the new transaction
- * will be a nested transaction, with the transaction indicated by \b parent
- * as its parent. Transactions may be nested to any level. A parent
- * transaction and its cursors may not issue any other operations than
- * mdb_txn_commit and mdb_txn_abort while it has active child transactions.
- * @param[in] flags Special options for this transaction. This parameter
- * must be set to 0 or by bitwise OR'ing together one or more of the
- * values described here.
- * <ul>
- *	<li>#MDB_RDONLY
- *		This transaction will not perform any write operations.
- *	<li>#MDB_NOSYNC
- *		Don't flush system buffers to disk when committing this transaction.
- *	<li>#MDB_NOMETASYNC
- *		Flush system buffers but omit metadata flush when committing this transaction.
- * </ul>
- * @param[out] txn Address where the new #MDB_txn handle will be stored
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>#MDB_PANIC - a fatal error occurred earlier and the environment
- *		must be shut down.
- *	<li>#MDB_MAP_RESIZED - another process wrote data beyond this MDB_env's
- *		mapsize and this environment's map must be resized as well.
- *		See #mdb_env_set_mapsize().
- *	<li>#MDB_READERS_FULL - a read-only transaction was requested and
- *		the reader lock table is full. See #mdb_env_set_maxreaders().
- *	<li>ENOMEM - out of memory.
- * </ul>
- */
-int  mdb_txn_begin(MDB_env *env, MDB_txn *parent, unsigned int flags, MDB_txn **txn);
+  fun ref commit() =>
+    """
+    Commit all the operations of a transaction into the database.
+    The transaction handle is freed. It and its cursors must not be used
+    again after this call, except with #mdb_cursor_renew().
+    Earlier documentation incorrectly said all cursors would be freed.
+    Only write-transactions free cursors.
+    """
+    let err = @mdb_txn_commit( _txn )
 
-/* @brief Returns the transaction's #MDB_env
- *
- * @param[in] txn A transaction handle returned by #mdb_txn_begin()
- */
-MDB_env *mdb_txn_env(MDB_txn *txn);
-
-/* @brief Return the transaction's ID.
- *
- * This returns the identifier associated with this transaction. For a
- * read-only transaction, this corresponds to the snapshot being read;
- * concurrent readers will frequently have the same transaction ID.
- *
- * @param[in] txn A transaction handle returned by #mdb_txn_begin()
- * @return A transaction ID, valid if input is an active transaction.
- */
-mdb_size_t mdb_txn_id(MDB_txn *txn);
-
-/* @brief Commit all the operations of a transaction into the database.
- *
- * The transaction handle is freed. It and its cursors must not be used
- * again after this call, except with #mdb_cursor_renew().
- * @note Earlier documentation incorrectly said all cursors would be freed.
- * Only write-transactions free cursors.
- * @param[in] txn A transaction handle returned by #mdb_txn_begin()
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- *	<li>ENOSPC - no more disk space.
- *	<li>EIO - a low-level I/O error occurred while writing.
- *	<li>ENOMEM - out of memory.
- * </ul>
- */
-int  mdb_txn_commit(MDB_txn *txn);
-
-/* @brief Abandon all the operations of the transaction instead of saving them.
- *
- * The transaction handle is freed. It and its cursors must not be used
- * again after this call, except with #mdb_cursor_renew().
- * @note Earlier documentation incorrectly said all cursors would be freed.
- * Only write-transactions free cursors.
- * @param[in] txn A transaction handle returned by #mdb_txn_begin()
- */
-void mdb_txn_abort(MDB_txn *txn);
+  fun ref abort() =>
+    """
+    Abandon all the operations of the transaction instead of saving them.
+    The transaction handle is freed. It and its cursors must not be used
+    again after this call, except with #mdb_cursor_renew().
+    Earlier documentation incorrectly said all cursors would be freed.
+    Only write-transactions free cursors.
+    """
+    @mdb_txn_abort( _txn )
 
 /* @brief Reset a read-only transaction.
  *
@@ -1024,10 +507,6 @@ int  mdb_txn_renew(MDB_txn *txn);
  * </ul>
  */
 //int  mdb_dbi_open(MDB_txn *txn, const char *name, unsigned int flags, MDB_dbi *dbi);
-use @mdb_dbi_open( Pointer[MDB_txn],
-	name: Pointer[U8],
-	flags: USize,
-	dbi: Pointer[Pointer[MDB_dbi]] )
 
 /* @brief Retrieve statistics for a database.
  *
@@ -1324,7 +803,6 @@ MDB_txn *mdb_cursor_txn(MDB_cursor *cursor);
  * @param[in] cursor A cursor handle returned by #mdb_cursor_open()
  */
 //MDB_dbi mdb_cursor_dbi(MDB_cursor *cursor);
-use @mdb_cursor_dbi[Pointer[MDB_dbi]]( Pointer[MDB_cursor] )
 
 /* @brief Retrieve by cursor.
  *
@@ -1346,9 +824,6 @@ use @mdb_cursor_dbi[Pointer[MDB_dbi]]( Pointer[MDB_cursor] )
  * </ul>
  */
 //int  mdb_cursor_get(MDB_cursor *cursor, MDB_val *key, MDB_val *data, MDB_cursor_op op);
-use @mdb_cursor_get[USize]( curs: Pointer[MDB_cursor],
-   key: Pointer[MDB_value], data: Pointer[MDB_value],
-   op: MDB_cursor_op )
 			    
 /* @brief Store by cursor.
  *
@@ -1410,9 +885,6 @@ use @mdb_cursor_get[USize]( curs: Pointer[MDB_cursor],
  * </ul>
  */
 //int  mdb_cursor_put(MDB_cursor *cursor, MDB_val *key, MDB_val *data, unsigned int flags);
-use @mdb_cursor_put( mdb: Pointer[U8],
-    key: Pointer[MDB_value], data: Pointer[MDB_value],
-    flags: USize = 0 )
 				
 /** @brief Delete current key/data pair
  *
@@ -1432,7 +904,6 @@ use @mdb_cursor_put( mdb: Pointer[U8],
  * </ul>
  */
 //int  mdb_cursor_del(MDB_cursor *cursor, unsigned int flags);
-use @mdb_cursor_del( mdb: Pointer[U8], flags: USize )
 
 /** @brief Return count of duplicates for current key.
  *
@@ -1447,7 +918,6 @@ use @mdb_cursor_del( mdb: Pointer[U8], flags: USize )
  * </ul>
  */
 //int  mdb_cursor_count(MDB_cursor *cursor, mdb_size_t *countp);
-use @mdb_cursor_count[USize]( mdb: Pointer[U8], count: Pointer[USize] )
 
 /* @brief Compare two data items according to a particular database.
  *

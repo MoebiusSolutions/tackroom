@@ -1,15 +1,18 @@
-Pony interface to LevelDB
-=========================
+# Pony interface to databases
 
-LevelDB is an open source key-value database written by Google.
-It is available at https://github.com/google/leveldb.git
+This package contains interfaces to a few simple databases.
 
-LevelDB is a simple key-value store with no added features like
+* LevelDB is an open source key-value database written by Google
+and source is available at https://github.com/google/leveldb.git  
+
+    LevelDB is a simple key-value store with no added features like
 secondary indices, distribution, etc.  Keys and values can be
 any byte sequences.
 
-Usage
------
+* LMDB (Lightning Memory Mapped Database) is an open source high-performance memory-mapped B-tree key-value database
+written by Symas Corporation.  Source is available at https://github.com/LMDB/lmdb.git.
+
+## LevelDB Usage
 
 * Open a database, creating one if it does not exist.  LevelDB databases are file system *directories*.  An optional second parameter is a **Bool** to enable synchronous writes (default *false*).
 ```
@@ -41,8 +44,10 @@ Usage
       let msg = db.errtxt
 ```
 
-To do
------
+## LMDB Usage
+
+
+## To do
 
 * Memory management, copying strings, freeing things
 * Range retreivals using iterators.
