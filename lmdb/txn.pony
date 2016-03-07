@@ -1,12 +1,10 @@
-use @mdb_txn_begin[USize]( env: Pointer[MDB_env], parent: Pointer[MDBtxn],
+use @mdb_txn_begin[USize]( env: Pointer[MDBenv], parent: Pointer[MDBtxn],
    flags: USize, txn: Pointer[Pointer[MDBtxn]] )
 use @mdb_txn_id[USize]( txn: Pointer[MDBtxn] )   
 use @mdb_txn_commit[USize]( txn: Pointer[MDBtxn] )
 use @mdb_txn_abort[None]( txn: Pointer[MDBtxn] )
 use @mdb_txn_reset[None]( txn: Pointer[MDBtxn] )
 use @mdb_txn_renew[None]( txn: Pointer[MDBtxn])
-use @mdb_stats[USize]( txn: Pointer[MDBtxn], dbi: Pointer[MDB_dbi],
-     stats: Pointer[Pointer[MDBdbstats]] )
 
 class MDBTransaction
   """
@@ -107,7 +105,7 @@ class MDBTransaction
  * must be called before opening the environment.  Database names are
  * keys in the unnamed database, and may be read but not written.
  """
-     var dbi: Pointer[MDB_dbi] = Pointer[MDB_dbi]()
+     var dbi: Pointer[MDBdbi] = Pointer[MDBdbi]()
      let err = @mdb_dbi_open( _txn,
          (if name.size() == 0 then Pointer[U8]() else name.cstring() end),
          flags, addressof dbi )

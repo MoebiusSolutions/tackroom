@@ -5,27 +5,27 @@ use "lib:lmdb"
 use @mdb_strerror[Pointer[U8]]( err: USize )
 use @mdb_env_create[USize]( env: Pointer[Pointer[U8]] )
 use @mdb_version[None]( major: Pointer[USize], minor: Pointer[USize], patch: Pointer[USize] )
-use @mdb_env_stat[None]( mdb: Pointer[MDB_env],
-	stat: Pointer[Poiter[MDB_stat]] )
+use @mdb_env_stat[None]( mdb: Pointer[MDBenv],
+	stat: Pointer[Pointer[MDBstat]] )
 use @mdb_env_open[USize]( env: Pointer[U8] tag,
     path: Pointer[U8], flags: USize, mode: USize )
-use @mdb_env_copy[USize]( env: Pointer[MDB_env], path: Pointer[U8] )
-use @mdb_env_copy2[USize]( env: Pointer[MDB_env], path: Pointer[U8], flags: USize )
+use @mdb_env_copy[USize]( env: Pointer[MDBenv], path: Pointer[U8] )
+use @mdb_env_copy2[USize]( env: Pointer[MDBenv], path: Pointer[U8], flags: USize )
 use @mdb_env_stat[None]( env: Pointer[U8], stat: Pointer[U8] )
-use @mdb_env_info[USize]( env: Pointer[MDB_env] tag,
-    stat: Pointer[MDB_info] )
-use @mdb_env_sync[USize]( env: Pointer[MDB_env], force: USize )
-use @mdb_env_close[None]( env: Pointer[MDB_env] )
-use @mdb_env_set_flags[USize]( env: Pointer[MDB_env], flags: USize, onoff: USize)
-use @mdb_env_get_flags[USize]( env: Pointer[MDB_env], flags: Pointer[USize] )
-use @mdb_env_get_path[USize]( env: Pointer[MDB_env], path: Pointer[Pointer[U8]] )
-use @mdb_env_set_mapsize[USize]( env:Pointer[MDB_env], size: USize )
-use @mdb_env_set_maxreaders[USize]( env: Pointer[MDB_env], count: USize )
-use @mdb_env_get_maxreaders[USize]( env: Pointer[MDB_env] )
-use @mdb_env_set_maxdbs[USize]( env: Pointer[MDB_env], count: USize )
-use @mdb_env_get_maxkeysize[USize]( enc: Pointer[MDB_env] )
-use @mdb_env_set_userctx[USize]( env: Pointer[MDB_env], ctx: Pointer[Any] )
-use @mdb_env_get_userctx[ Pointer[Any] ]( env: Pointer[MDB_env] )
+use @mdb_env_info[USize]( env: Pointer[MDBenv] tag,
+    stat: Pointer[MDBinfo] )
+use @mdb_env_sync[USize]( env: Pointer[MDBenv], force: USize )
+use @mdb_env_close[None]( env: Pointer[MDBenv] )
+use @mdb_env_set_flags[USize]( env: Pointer[MDBenv], flags: USize, onoff: USize)
+use @mdb_env_get_flags[USize]( env: Pointer[MDBenv], flags: Pointer[USize] )
+use @mdb_env_get_path[USize]( env: Pointer[MDBenv], path: Pointer[Pointer[U8]] )
+use @mdb_env_set_mapsize[USize]( env:Pointer[MDBenv], size: USize )
+use @mdb_env_set_maxreaders[USize]( env: Pointer[MDBenv], count: USize )
+use @mdb_env_get_maxreaders[USize]( env: Pointer[MDBenv] )
+use @mdb_env_set_maxdbs[USize]( env: Pointer[MDBenv], count: USize )
+use @mdb_env_get_maxkeysize[USize]( enc: Pointer[MDBenv] )
+use @mdb_env_set_userctx[USize]( env: Pointer[MDBenv], ctx: Pointer[Any] )
+use @mdb_env_get_userctx[ Pointer[Any] ]( env: Pointer[MDBenv] )
 
 // Opaque structures for actual LMDB handles.
 primitive MDBenv  // The overall LMDB Environment
@@ -110,7 +110,7 @@ class MDBstat
   new create() => None
 
 // Environment info
-class MDBenvinfo
+class MDBinfo
   var mapaddr: Pointer[U8] = Pointer[U8]() // Address of map, if fixed
   var mapsize: USize = 0     // Size of mapped area
   var last_pgno: USize = 0   // ID of last used page
@@ -196,17 +196,17 @@ class MDBEnvironment
 // int  mdb_env_copyfd2(MDBenv *env, mdb_filehandle_t fd, unsigned int flags);
 
   fun ref info(): MDBinfo =>
-    let info: MDBinfo = MDBinfo.create()
-    @mdb_env_info( _mdbenv, addressof info )
-    info
+    let infop: MDBinfo = MDBinfo.create()
+    @mdb_env_info( _mdbenv, addressof infop )
+    infop
 
-  fun ref stats(): MDBstats =>
+  fun ref stats(): MDBstat =>
     """
     Return statistics about the environment
     """
-    let stats: MDBstats = MDBstats.create()
-    @mdb_env_stat( _mdbenv, addressof stats )
-    stats
+    let statp: MDBstat = MDBstat.create()
+    @mdb_env_stat( _mdbenv, addressof statp )
+    statp
 
   fun ref flush( force: Bool = false ) =>
     let err = @mdb_env_sync( _mdbenv, force )
@@ -290,11 +290,11 @@ class MDBEnvironment
     """
     @mdb_env_get_maxkeysize( _mdbenv )
 
-  fun ref set_appinfo( info: Pointer[Any] ) =>
+  fun ref set_appinfo( infop: Pointer[Any] ) =>
     """
     Set application information associated with the Environment.
     """
-    let err = @mdb_env_set_userctx( _mdbenv, info )
+    let err = @mdb_env_set_userctx( _mdbenv, infop )
 
   fun ref get_appinfo(): Pointer[Any] =>
     """

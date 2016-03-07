@@ -1,8 +1,8 @@
-use @mdb_cursor_get[USize]( curs: Pointer[MDB_cur],
-   key: Pointer[MDB_value], data: Pointer[MDB_value],
-   op: MDB_cursor_op )
-use @mdb_cursor_put[USize]( cursor: Pointer[MDB_cur],
-    key: Pointer[MDB_value], data: Pointer[MDB_value],
+use @mdb_cursor_get[USize]( curs: Pointer[MDBcur],
+   key: Pointer[MDBval], data: Pointer[MDBval],
+   op: USize )
+use @mdb_cursor_put[USize]( cursor: Pointer[MDBcur],
+    key: Pointer[MDBval], data: Pointer[MDBval],
     flags: USize )
 use @mdb_cursor_del[USize]( mdb: Pointer[U8], flags: USize )
 use @mdb_cursor_count[USize]( mdb: Pointer[U8], count: Pointer[USize] )
@@ -11,8 +11,8 @@ use @mdb_cursor_get[USize]( curs: Pointer[MDBcur],
     key: Pointer[MDBval], data: Pointer[MDBval], op: USize )
 
 class MDBCursor
-  let _cur: Pointer[MDB_cur]
-  new create( cursor: Pointer[MDB_cur] ) =>
+  let _cur: Pointer[MDBcur]
+  new create( cursor: Pointer[MDBcur] ) =>
     _cur = cur
 
   fun ref close() =>
@@ -39,10 +39,10 @@ class MDBCursor
  *	<li>EINVAL - an invalid parameter was specified.
  * </ul>
 
-int  mdb_cursor_renew(MDB_txn *txn, MDB_cursor *cursor);
+int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
 */
 
-  fun ref apply( key: String, op: USize ): String =>
+  fun ref apply( op: USize ): String =>
     """
     Retrieve by cursor.
     This function retrieves key/data pairs from the database.
@@ -53,9 +53,9 @@ int  mdb_cursor_renew(MDB_txn *txn, MDB_cursor *cursor);
     refers.
     See MDBTransaction.get() for restrictions on using the output values.
      """
-     let key = MDBval.create()
-     let data = MDBval.create()
-     let err = @mdb_cursor_get( _cur, addressof key, addressof data, op )
+     let keyp = MDBval.create()
+     let datap = MDBval.create()
+     let err = @mdb_cursor_get( _cur, addressof keyp, addressof datap, op )
      (key.string(), data.string())
     
   fun ref update( key: String, data: String, flags: USize = 0 ) =>
@@ -112,10 +112,10 @@ int  mdb_cursor_renew(MDB_txn *txn, MDB_cursor *cursor);
  * </ul>
      """
      let err = @mdb_cursor_put( _cur,
-         MDB_value.from_string(key),
-         MDB_value.from_string(data),
+         MDBval.from_string(key),
+         MDBval.from_string(data),
 	 flags )
-//int  mdb_cursor_put(MDB_cursor *cursor, MDB_val *key, MDB_val *data, unsigned int flags);
+//int  mdb_cursor_put(MDBcursor *cursor, MDB_val *key, MDB_val *data, unsigned int flags);
 				
 /** @brief Delete current key/data pair
  *
@@ -134,7 +134,7 @@ int  mdb_cursor_renew(MDB_txn *txn, MDB_cursor *cursor);
  *	<li>EINVAL - an invalid parameter was specified.
  * </ul>
  */
-//int  mdb_cursor_del(MDB_cursor *cursor, unsigned int flags);
+//int  mdb_cursor_del(MDBcursor *cursor, unsigned int flags);
 
 /** @brief Return count of duplicates for current key.
  *
@@ -148,4 +148,4 @@ int  mdb_cursor_renew(MDB_txn *txn, MDB_cursor *cursor);
  *	<li>EINVAL - cursor is not initialized, or an invalid parameter was specified.
  * </ul>
  */
-//int  mdb_cursor_count(MDB_cursor *cursor, mdb_size_t *countp);
+//int  mdb_cursor_count(MDBcursor *cursor, mdb_size_t *countp);

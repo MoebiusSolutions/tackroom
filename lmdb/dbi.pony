@@ -15,7 +15,7 @@ use @mdb_dbi_flags[USize]( txn: Pointer[MDBtxn],
       flags: Pointer[USize] )
       use @mdb_get[USize]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
-      key: Pointer[MDVval],
+      key: Pointer[MDBval],
       data: Pointer[MDBval] )
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 
@@ -42,7 +42,6 @@ primitive MDBputflag
   fun appenddup() => 0x40000 // Duplicate data is being appended, don't split full pages.
   fun multiple() => 0x80000 // Store multiple data items in one call. Only for #MDB_DUPFIXED.
 
-
 class MDBDatabase
   """
   An LMDB "database" is a separate B-tree within the MDBEnvironment.
@@ -55,11 +54,11 @@ class MDBDatabase
     _txn = txn
     _dbi = dbi
 
-  fun ref stats(): MDBdbstats =>
+  fun ref stats(): MDBstat =>
     """
     Retrieve statistics for a database.
     """
-    let dbstats = MDBdbstats.create()
+    let dbstats = MDBstat.create()
     let err = @mdb_stat( _txn, _dbi, addressof dbstats )
     dbstats
 
@@ -67,9 +66,9 @@ class MDBDatabase
     """
     Retrieve the DB flags for a database handle.
     """
-    var flags: USize = 0
-    let err = @mdb_dbi_flags( _tax, _dbi, addressof flags )
-    flags
+    var flagp: USize = 0
+    let err = @mdb_dbi_flags( _tax, _dbi, addressof flagp )
+    flagp
  
   fun ref close() =>
     """
@@ -132,7 +131,7 @@ class MDBDatabase
        MDBval.from_string(key),
         addressof data)
 
-  fun ref update( key: String, data: String, flags: USize = 0 ) =>
+  fun ref update( key: String, data: String, flag: USize = 0 ) =>
     """
     Store items into a database.
  *
@@ -143,7 +142,7 @@ class MDBDatabase
      """
      let keydesc = MDBval.from_string( key )
      let valdesc = MDBval.from_string( data )
-     let err = @mdb_put( _txn, _dbi, keydesc, valdesc, flags )
+     let err = @mdb_put( _txn, _dbi, keydesc, valdesc, flag )
 
   fun ref delete( key: String, data: (String | None) = None ) =>
     """ Delete items from a database.
@@ -189,7 +188,7 @@ class MDBDatabase
  * </ul>
  
    """
-   var cursor = Pointer[MDBcur]()
-   let err = @mdb_cursor_open( _txn, _dbi, addressof cursor )
-   MDBCursor.create( cursor )
+   var cur = Pointer[MDBcur]()
+   let err = @mdb_cursor_open( _txn, _dbi, addressof cur )
+   MDBCursor.create( cur )
 
