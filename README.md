@@ -14,6 +14,8 @@ written by Symas Corporation.  Source is available at https://github.com/LMDB/lm
 
 ## LevelDB Usage
 
+Basic functionality is working.  Development continues to fill out functionality in the area of cursors.
+
 * Open a database, creating one if it does not exist.  LevelDB databases are file system *directories*.  An optional second parameter is a **Bool** to enable synchronous writes (default *false*).
 ```
      let db = LevelDB.create( "dirpath" )
@@ -46,6 +48,7 @@ written by Symas Corporation.  Source is available at https://github.com/LMDB/lm
 
 ## LMDB Usage
 
+Under development.
 
 ## To do
 
