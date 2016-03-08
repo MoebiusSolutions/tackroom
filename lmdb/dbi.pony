@@ -3,35 +3,36 @@ use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
     dbstat: Pointer[MDBstat] )
 use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBval], data: Pointer[MDBval],
+      key: Pointer[MDBvalin], data: Pointer[MDBvalin],
       flags: FlagMask )
 use @mdb_del[Stat]( txn: Pointer[MDBtxn] tag, dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBval], data: Pointer[MDBval] )
+      key: Pointer[MDBvalin], data: Pointer[MDBvalin] )
 use @mdb_dbi_flags[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
       flags: Pointer[U32] )
 use @mdb_get[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBval],
-      data: Pointer[MDBval] tag)
+      key: Pointer[MDBvalin],
+      data: Pointer[MDBvalout] )
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
-    cur: Pointer[Pointer[MDBcur]] )
+	cur: Pointer[Pointer[MDBcur]] )
+
 // Flags on opening a database.  These can be combined.
 primitive MDBopenflag
-  fun reversekey(): FlagMask => 0x02   // use reverse string keys */
-  fun dupsort(): FlagMask => 0x04     // use sorted duplicates */
+  fun reversekey(): FlagMask => 0x02   // use reverse string keys
+  fun dupsort(): FlagMask => 0x04     // use sorted duplicates
   fun integerkey(): FlagMask => 0x08  // numeric keys in native byte order: either unsigned int or size_t.
   fun dupfixed(): FlagMask => 0x10   // with #MDB_DUPSORT, sorted dup items have fixed size
-  fun integerdup(): FlagMask => 0x20 // with #MDB_DUPSORT, dups are #MDB_INTEGERKEY-style integers */
-  fun reversedup(): FlagMask => 0x40 // with #MDB_DUPSORT, use reverse string dups */
-  fun create(): FlagMask => 0x40000  // create DB if not already existing */
+  fun integerdup(): FlagMask => 0x20 // with #MDB_DUPSORT, dups are #MDB_INTEGERKEY-style integers
+  fun reversedup(): FlagMask => 0x40 // with #MDB_DUPSORT, use reverse string dups
+  fun create(): FlagMask => 0x40000  // create DB if not already existing
 
 // Flags on write operations.
 primitive MDBputflag
   fun nooverwrite(): FlagMask => 0x10 // For put: Don't write if the key already exists.
   fun nodupdata(): FlagMask => 0x20 // Only for #MDB_DUPSORT:
-      // For put: don't write if the key and data pair already exist.<br>
+      // For put: don't write if the key and data pair already exist.
       // For mdb_cursor_del: remove all duplicate data items.
   fun current(): FlagMask => 0x40 // For mdb_cursor_put: overwrite the current key/data pair
   fun reserve(): FlagMask => 0x10000 // For put: Just reserve space for data,
@@ -40,6 +41,51 @@ primitive MDBputflag
   fun appenddup(): FlagMask => 0x40000 // Duplicate data is being appended, don't split full pages.
   fun multiple(): FlagMask => 0x80000 // Store multiple data items in one call. Only for #MDB_DUPFIXED.
 
+struct MDBvalin
+  """
+  Generic structure used for passing keys and data INTO the database.
+
+  Key sizes must be between 1 and env.maxkeysize() inclusive.
+  The same applies to data sizes in databases with the DUPSORT flag.
+  Other data items can in theory be from 0 to 0xffffffff bytes long.
+  """
+  var size: USize
+  var data: Pointer[U8] tag
+
+  new create( s: String ) =>
+    """
+    Create an MDBval for an existing Pony String.
+    """
+    size = s.size()
+    data = s.cstring()
+
+struct MDBvalout
+  """
+  Generic structure used for passing keys and data OUT of the database.
+
+  Values returned from the database are valid only until a subsequent
+  update operation, or the end of the transaction, so we copy any
+  returned data into Pony-space.
+  """
+  var size: USize
+  var data: Pointer[U8]
+
+  new create() =>
+    """
+    The fields will be overwritten by LMDB so we just initialize them
+    to zero for now.
+    """
+    size = 0
+    data = Pointer[U8].create()
+
+  fun ref string(): String =>
+    """
+    Create a Pony String from the database information.  We copy the
+    data because LMDB gave us a pointer directly into the mapped memory
+    area, which can change out from under us when the transaction ends.
+    """
+    String.copy_cstring( data, size )	  
+	  
 class MDBDatabase
   """
   An LMDB "database" is a separate B-tree within the MDBEnvironment.
@@ -114,8 +160,8 @@ class MDBDatabase
  * @note Values returned from the database are valid only until a
  * subsequent update operation, or the end of the transaction.
  """
-     var data: MDBval = MDBval.create()
-     var keybuf = MDBval.from_string(key)
+     var data: MDBvalout = MDBvalout.create()
+     var keybuf = MDBvalin.create(key)
      let err = @mdb_get( _mdbtxn, _mdbdbi,
        addressof keybuf,
        addressof data)
@@ -130,8 +176,8 @@ class MDBDatabase
  * if duplicates are disallowed, or adding a duplicate data item if
  * duplicates are allowed (#MDB_DUPSORT).
      """
-     var keydesc = MDBval.from_string( key )
-     var valdesc = MDBval.from_string( data )
+     var keydesc = MDBvalin.create( key )
+     var valdesc = MDBvalin.create( data )
      let err = @mdb_put( _mdbtxn, _mdbdbi,
          addressof keydesc, addressof valdesc, flag )
 
@@ -147,12 +193,12 @@ class MDBDatabase
     This function will return NOTFOUND if the specified key/data
     pair is not in the database.
     """
-    var keydesc = MDBval.from_string(key)
+    var keydesc = MDBvalin.create(key)
     match data
     | None =>
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 	addressof keydesc,
-	Pointer[MDBval].create() )
+	Pointer[MDBvalin].create() )
     | let s: String =>
 	var valdesc = MDBval.from_string( s )
 	let err = @mdb_del( _mdbtxn, _mdbdbi,

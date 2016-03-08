@@ -1,7 +1,7 @@
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
-   key: Pointer[MDBval], data: Pointer[MDBval], op: U32 )
+   key: Pointer[MDBvalout], data: Pointer[MDBvalout], op: U32 )
 use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
-    key: Pointer[MDBval], data: Pointer[MDBval],
+    key: Pointer[MDBvalin], data: Pointer[MDBvalin],
     flags: FlagMask)
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
 use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )

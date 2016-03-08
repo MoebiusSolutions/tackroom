@@ -40,41 +40,6 @@ primitive MDBtxn  // A transaction within the environment
 primitive MDBdbi  // A database within the environment
 primitive MDBcur  // A cursor for sequential operations
 
-struct MDBval
-  """
-  Generic structure used for passing keys and data in and out
-  of the database.
-
-  Values returned from the database are valid only until a subsequent
-  update operation, or the end of the transaction. Do not modify or
-  free them, they commonly point into the database itself.
-
-  Key sizes must be between 1 and env.maxkeysize() inclusive.
-  The same applies to data sizes in databases with the DUPSORT flag.
-  Other data items can in theory be from 0 to 0xffffffff bytes long.
-  """
-  var size: U32 = 0
-  var data: Pointer[U8] = Pointer[U8].create()
-
-  new apply( data': Pointer[U8], size': U32 ) =>
-    size = size'
-    data = data'
-
-  new create() => None
-
-  new from_string( s: String ) =>
-    """
-    Create an MDBval for an existing Pony String.
-    """
-    size = s.size().u32()
-    data = s.cstring()
-
-  fun ref string(): String =>
-    """
-    Create a Pony String from the database information.
-    """
-    String.from_cstring( data, size )	  
-	  
 //  Flags on creating an environment
 primitive MDBenvflag
   fun fixedmap(): FlagMask => 0x01   // mmap at a fixed address (experimental)
