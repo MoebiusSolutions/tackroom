@@ -1,27 +1,49 @@
-use @mdb_cursor_get[USize]( curs: Pointer[MDBcur],
-   key: Pointer[MDBval], data: Pointer[MDBval],
-   op: USize )
-use @mdb_cursor_put[USize]( cursor: Pointer[MDBcur],
+use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
+   key: Pointer[MDBval], data: Pointer[MDBval], op: U32 )
+use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
     key: Pointer[MDBval], data: Pointer[MDBval],
-    flags: USize )
-use @mdb_cursor_del[USize]( mdb: Pointer[U8], flags: USize )
-use @mdb_cursor_count[USize]( mdb: Pointer[U8], count: Pointer[USize] )
+    flags: FlagMask)
+use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
+use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
 use @mdb_cursor_close[None]( cur: Pointer[MDBcur] )
-use @mdb_cursor_get[USize]( curs: Pointer[MDBcur],
-    key: Pointer[MDBval], data: Pointer[MDBval], op: USize )
+
+// Op-codes for cursor operations.			 
+primitive MDBcursorop
+  fun first(): U32 => 0           // Position at first key/data item
+  fun first_dup(): U32 => 1       // Position at first data item of current key.
+  fun get_both(): U32 => 2        // Seek to first key/data for DUPSORT
+  fun get_both_range(): U32 => 3  // Seek to key, nearest data for DUPSORT
+  fun get_current(): U32 => 4     // Return current position data
+  fun get_multiple(): U32 => 5    // Return key and up to a page of dups.
+					// Move to prepare for NEXT_MULTIPLE
+  fun last(): U32 => 6            // Seek to last item
+  fun last_dup(): U32 => 7        // Seek to last of current dup group
+  fun next(): U32 => 8            // Seek to next record
+  fun next_dup(): U32 => 9        // Seek to next in dup group
+  fun next_multiple(): U32 => 10  // Key and up to a page of dups.
+  fun next_nodup(): U32 => 11     // Seek to next unique key
+  fun prev(): U32 => 12           // Seek backwards one record
+  fun prev_dup(): U32 => 13       // Seek backwards in same dup group
+  fun prev_nodup(): U32 => 14     // Seek last item of previous key
+  fun set(): U32 => 15            // Seek to key, no fetch
+  fun set_key(): U32 => 16        // Seek to key, fetch
+  fun set_range(): U32 => 17      // Seek to first greater key
+  fun prev_multiple(): U32 => 18  // Seek previous page
 
 class MDBCursor
-  let _cur: Pointer[MDBcur]
-  new create( cursor: Pointer[MDBcur] ) =>
-    _cur = cur
+  let _mdbcur: Pointer[MDBcur]
+  let _env: MDBEnvironment
+  new create( env: MDBEnvironment, cursor: Pointer[MDBcur] ) =>
+    _mdbcur = cursor
+    _env = env
 
   fun ref close() =>
     """
     Close a cursor handle.
     The cursor handle will be freed and must not be used again after this call.
     Its transaction must still be live if it is a write-transaction.
-     """
-     @mdb_cursor_close( _cur )
+    """
+    @mdb_cursor_close( _mdbcur )
 
 /* @brief Renew a cursor handle.
  *
@@ -42,110 +64,48 @@ class MDBCursor
 int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
 */
 
-  fun ref apply( op: USize ): String =>
+  fun ref apply( op: U32 ): (String, String) =>
     """
     Retrieve by cursor.
     This function retrieves key/data pairs from the database.
-    The address and length
-    of the key are returned in the object to which \b key refers (except for the
-    case of the #MDB_SET option, in which the \b key object is unchanged), and
-    the address and length of the data are returned in the object to which \b data
-    refers.
+    The address and length of the key are returned in the object to
+    which \b key refers (except for the case of the SET option, in which
+    the \b key object is unchanged), and the address and length of the
+    data are returned in the object to which \b data refers.
     See MDBTransaction.get() for restrictions on using the output values.
      """
-     let keyp = MDBval.create()
-     let datap = MDBval.create()
-     let err = @mdb_cursor_get( _cur, addressof keyp, addressof datap, op )
-     (key.string(), data.string())
+     var keyp = MDBval.create()
+     var datap = MDBval.create()
+     let err = @mdb_cursor_get( _mdbcur, addressof keyp, addressof datap, op )
+     (keyp.string(), datap.string())
     
-  fun ref update( key: String, data: String, flags: USize = 0 ) =>
+  fun ref update( key: String, data: String, flags: FlagMask = 0 ) =>
     """
     Store by cursor.
- *
- * This function stores key/data pairs into the database.
- * The cursor is positioned at the new item, or on failure usually near it.
- * @note Earlier documentation incorrectly said errors would leave the
- * state of the cursor unchanged.
- * @param[in] cursor A cursor handle returned by #mdb_cursor_open()
- * @param[in] key The key operated on.
- * @param[in] data The data operated on.
- * @param[in] flags Options for this operation. This parameter
- * must be set to 0 or one of the values described here.
- * <ul>
- * <li>#MDB_CURRENT - replace the item at the current cursor position.
- *	The \b key parameter must still be provided, and must match it.
- *	If using sorted duplicates (#MDB_DUPSORT) the data item must still
- *	sort into the same place. This is intended to be used when the
- *	new data is the same size as the old. Otherwise it will simply
- *	perform a delete of the old record followed by an insert.
- *<li>#MDB_NODUPDATA - enter the new key/data pair only if it does not
- *	already appear in the database. This flag may only be specified
- *	if the database was opened with #MDB_DUPSORT. The function will
- *	return #MDB_KEYEXIST if the key/data pair already appears in the
- *	database.
- *<li>#MDB_NOOVERWRITE - enter the new key/data pair only if the key
- *	does not already appear in the database. The function will return
- *	#MDB_KEYEXIST if the key already appears in the database, even if
- *	the database supports duplicates (#MDB_DUPSORT).
- *<li>#MDB_RESERVE - reserve space for data of the given size, but
- *	don't copy the given data. Instead, return a pointer to the
- *	reserved space, which the caller can fill in later - before
- *	the next update operation or the transaction ends. This saves
- *	an extra memcpy if the data is being generated later. This flag
- *	must not be specified if the database was opened with #MDB_DUPSORT.
- *<li>#MDB_APPEND - append the given key/data pair to the end of the
- *	database. No key comparisons are performed. This option allows
- *	fast bulk loading when keys are already known to be in the
- *	correct order. Loading unsorted keys with this flag will cause
- *	a #MDB_KEYEXIST error.
- *<li>#MDB_APPENDDUP - as above, but for sorted dup data.
- *<li>#MDB_MULTIPLE - store multiple contiguous data elements in a
- *	single request. This flag may only be specified if the database
- *	was opened with #MDB_DUPFIXED. The \b data argument must be an
- *	array of two MDB_vals. The mv_size of the first MDB_val must be
- *	the size of a single data element. The mv_data of the first MDB_val
- *	must point to the beginning of the array of contiguous data elements.
- *	The mv_size of the second MDB_val must be the count of the number
- *	of data elements to store. On return this field will be set to
- *	the count of the number of elements actually written. The mv_data
- *	of the second MDB_val is unused.
- * </ul>
-     """
-     let err = @mdb_cursor_put( _cur,
-         MDBval.from_string(key),
-         MDBval.from_string(data),
+    This function stores key/data pairs into the database.
+    The cursor is positioned at the new item, or on failure usually near it.
+    """
+    var keyp = MDBval.from_string(key)
+    var datap = MDBval.from_string(data)
+    let err = @mdb_cursor_put( _mdbcur,
+         addressof keyp, addressof datap,
 	 flags )
-//int  mdb_cursor_put(MDBcursor *cursor, MDB_val *key, MDB_val *data, unsigned int flags);
-				
-/** @brief Delete current key/data pair
- *
- * This function deletes the key/data pair to which the cursor refers.
- * @param[in] cursor A cursor handle returned by #mdb_cursor_open()
- * @param[in] flags Options for this operation. This parameter
- * must be set to 0 or one of the values described here.
- * <ul>
- *	<li>#MDB_NODUPDATA - delete all of the data items for the current key.
- *	This flag may only be specified if the database was opened with #MDB_DUPSORT.
- * </ul>
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EACCES - an attempt was made to write in a read-only transaction.
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
- */
-//int  mdb_cursor_del(MDBcursor *cursor, unsigned int flags);
 
-/** @brief Return count of duplicates for current key.
- *
- * This call is only valid on databases that support sorted duplicate
- * data items #MDB_DUPSORT.
- * @param[in] cursor A cursor handle returned by #mdb_cursor_open()
- * @param[out] countp Address where the count will be stored
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - cursor is not initialized, or an invalid parameter was specified.
- * </ul>
- */
-//int  mdb_cursor_count(MDBcursor *cursor, mdb_size_t *countp);
+  fun ref delete( flags: FlagMask = 0 ) =>
+    """
+    Delete current key/data pair
+    This function deletes the key/data pair to which the cursor refers.
+    Flag NODUPDATA - delete all of the data items for the current key.
+    This flag may only be specified if the database was opened with DUPSORT.
+    """
+    let err = @mdb_cursor_del( _mdbcur, flags )
+
+  fun ref dupcount(): U32 =>
+    """
+    Count of duplicates for current key.
+    This call is only valid on databases that support sorted duplicate
+    data items DUPSORT.
+    """
+    var count: U32 = 0
+    let err = @mdb_cursor_count( _mdbcur, addressof count )
+    count
