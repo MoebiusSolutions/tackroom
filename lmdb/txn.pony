@@ -22,7 +22,7 @@ class MDBTransaction
     _mdbtxn = txn
     _env = env
 
-  fun ref handle(): Pointer[MDBtxn] => _mdbtxn
+  fun ref handle(): Pointer[MDBtxn] tag => _mdbtxn
 
   fun ref id(): U32 =>
     """

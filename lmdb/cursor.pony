@@ -1,7 +1,7 @@
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
-   key: Pointer[MDBvalout], data: Pointer[MDBvalout], op: U32 )
+   key: Pointer[MDBValReceive], data: Pointer[MDBValReceive], op: U32 )
 use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
-    key: Pointer[MDBvalin], data: Pointer[MDBvalin],
+    key: Pointer[MDBValSend], data: Pointer[MDBValSend],
     flags: FlagMask)
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
 use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
@@ -64,7 +64,7 @@ class MDBCursor
 int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
 */
 
-  fun ref apply( op: U32 ): (String, String) =>
+  fun ref apply( op: U32 ): (MDBdata, MDBdata) =>
     """
     Retrieve by cursor.
     This function retrieves key/data pairs from the database.
@@ -74,19 +74,19 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
     data are returned in the object to which \b data refers.
     See MDBTransaction.get() for restrictions on using the output values.
      """
-     var keyp = MDBval.create()
-     var datap = MDBval.create()
+     var keyp = MDBValReceive.create()
+     var datap = MDBValReceive.create()
      let err = @mdb_cursor_get( _mdbcur, addressof keyp, addressof datap, op )
-     (keyp.string(), datap.string())
+     (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
     
-  fun ref update( key: String, data: String, flags: FlagMask = 0 ) =>
+  fun ref update( key: MDBdata, data: MDBdata, flags: FlagMask = 0 ) =>
     """
     Store by cursor.
     This function stores key/data pairs into the database.
     The cursor is positioned at the new item, or on failure usually near it.
     """
-    var keyp = MDBval.from_string(key)
-    var datap = MDBval.from_string(data)
+    var keyp = MDBUtil.from_a(key)
+    var datap = MDBUtil.from_a(data)
     let err = @mdb_cursor_put( _mdbcur,
          addressof keyp, addressof datap,
 	 flags )

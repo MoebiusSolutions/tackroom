@@ -3,17 +3,17 @@ use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
     dbstat: Pointer[MDBstat] )
 use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBvalin], data: Pointer[MDBvalin],
+      key: Pointer[MDBValSend], data: Pointer[MDBValSend],
       flags: FlagMask )
 use @mdb_del[Stat]( txn: Pointer[MDBtxn] tag, dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBvalin], data: Pointer[MDBvalin] )
+      key: Pointer[MDBValSend], data: Pointer[MDBValSend] )
 use @mdb_dbi_flags[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
       flags: Pointer[U32] )
 use @mdb_get[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBvalin],
-      data: Pointer[MDBvalout] )
+      key: Pointer[MDBValSend],
+      data: Pointer[MDBValReceive] )
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
 	cur: Pointer[Pointer[MDBcur]] )
@@ -41,7 +41,30 @@ primitive MDBputflag
   fun appenddup(): FlagMask => 0x40000 // Duplicate data is being appended, don't split full pages.
   fun multiple(): FlagMask => 0x80000 // Store multiple data items in one call. Only for #MDB_DUPFIXED.
 
-struct MDBvalin
+// Data in and out is expressed as arrays of bytes rather then Strings
+// because Strings have an extra zero byte at the end, and have slightly
+// different semantics.
+type MDBdata is Array[U8]
+primitive MDBUtil
+  """
+  Functions to convert between Array[U8] and the LMDB descriptor format.
+  Contributed by jemc.
+  """
+  fun tag null_ptr[A](): Pointer[A] iso^ =>
+    @pony_alloc[Pointer[A] iso^](@pony_ctx[Pointer[None] iso](), USize(0))
+  
+  fun tag from_a(a: Array[U8] box): MDBValSend =>
+    MDBValSend(a.size(), a.cstring())
+  
+  fun tag to_a(mv: MDBValReceive): Array[U8] =>
+    """
+    Create a Pony Array[U8] from the database information.  We copy the
+    data because LMDB gave us a pointer directly into the mapped memory
+    area, which can change out from under us when the transaction ends.
+    """
+    Array[U8].from_cstring(mv.data, mv.size).clone()
+
+struct box MDBValSend
   """
   Generic structure used for passing keys and data INTO the database.
 
@@ -49,43 +72,24 @@ struct MDBvalin
   The same applies to data sizes in databases with the DUPSORT flag.
   Other data items can in theory be from 0 to 0xffffffff bytes long.
   """
-  var size: USize
-  var data: Pointer[U8] tag
+  let size: USize
+  let data: Pointer[U8] tag
+  new box create(size': USize, data': Pointer[U8] tag) =>
+    size = size'; data = data'
 
-  new create( s: String ) =>
-    """
-    Create an MDBval for an existing Pony String.
-    """
-    size = s.size()
-    data = s.cstring()
-
-struct MDBvalout
+struct ref MDBValReceive
   """
   Generic structure used for passing keys and data OUT of the database.
 
   Values returned from the database are valid only until a subsequent
   update operation, or the end of the transaction, so we copy any
   returned data into Pony-space.
+  The fields will be overwritten by LMDB so we just initialize them
+  to zero for now.
   """
-  var size: USize
-  var data: Pointer[U8]
+  var size: USize = 0
+  var data: Pointer[U8] ref = MDBUtil.null_ptr[U8]()
 
-  new create() =>
-    """
-    The fields will be overwritten by LMDB so we just initialize them
-    to zero for now.
-    """
-    size = 0
-    data = Pointer[U8].create()
-
-  fun ref string(): String =>
-    """
-    Create a Pony String from the database information.  We copy the
-    data because LMDB gave us a pointer directly into the mapped memory
-    area, which can change out from under us when the transaction ends.
-    """
-    String.copy_cstring( data, size )	  
-	  
 class MDBDatabase
   """
   An LMDB "database" is a separate B-tree within the MDBEnvironment.
@@ -147,7 +151,7 @@ class MDBDatabase
  */
 //int  mdb_drop(MDB_mdbtxn *txn, Mdb_dbi dbi, int del);
 
-  fun ref apply( key: String ): String =>
+  fun ref apply( key: Array[U8] ): Array[U8] =>
     """
     This function retrieves key/data pairs from the database.
     If the database supports duplicate keys (#MDB_DUPSORT) then the
@@ -160,14 +164,14 @@ class MDBDatabase
  * @note Values returned from the database are valid only until a
  * subsequent update operation, or the end of the transaction.
  """
-     var data: MDBvalout = MDBvalout.create()
-     var keybuf = MDBvalin.create(key)
+     var data: MDBValReceive = MDBValReceive.create()
+     var keybuf = MDBUtil.from_a(key)
      let err = @mdb_get( _mdbtxn, _mdbdbi,
        addressof keybuf,
        addressof data)
-     data.string()
+     MDBUtil.to_a( data )
 
-  fun ref update( key: String, data: String, flag: FlagMask = 0 ) =>
+  fun ref update( key: MDBdata, data: MDBdata, flag: FlagMask = 0 ) =>
     """
     Store items into a database.
  *
@@ -176,12 +180,12 @@ class MDBDatabase
  * if duplicates are disallowed, or adding a duplicate data item if
  * duplicates are allowed (#MDB_DUPSORT).
      """
-     var keydesc = MDBvalin.create( key )
-     var valdesc = MDBvalin.create( data )
+     var keydesc = MDBUtil.from_a( key )
+     var valdesc = MDBUtil.from_a( data )
      let err = @mdb_put( _mdbtxn, _mdbdbi,
          addressof keydesc, addressof valdesc, flag )
 
-  fun ref delete( key: String, data: (String | None) = None ) =>
+  fun ref delete( key: MDBdata, data: (MDBdata | None) = None ) =>
     """
     This function removes key/data pairs from the database.
     If the database does not support sorted duplicate data items
@@ -193,14 +197,14 @@ class MDBDatabase
     This function will return NOTFOUND if the specified key/data
     pair is not in the database.
     """
-    var keydesc = MDBvalin.create(key)
+    var keydesc = MDBUtil.from_a(key)
     match data
     | None =>
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 	addressof keydesc,
-	Pointer[MDBvalin].create() )
-    | let s: String =>
-	var valdesc = MDBval.from_string( s )
+	Pointer[MDBValSend].create() )
+    | let d: Array[U8] =>
+	var valdesc = MDBUtil.from_a( d )
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 	addressof keydesc,
 	addressof valdesc )
