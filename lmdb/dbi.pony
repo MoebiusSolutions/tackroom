@@ -169,7 +169,7 @@ class MDBDatabase
     _env.report_error( err )
      MDBUtil.to_a( data )
 
-  fun ref update( key: MDBdata, data: MDBdata, flag: FlagMask = 0 ) =>
+  fun ref update( key: MDBdata, value: MDBdata, flag: FlagMask = 0 ) =>
     """
     Store items into a database.
     This function stores key/data pairs in the database. The default behavior
@@ -178,7 +178,7 @@ class MDBDatabase
     duplicates are allowed (DUPSORT).
     """
     var keydesc = MDBUtil.from_a( key )
-    var valdesc = MDBUtil.from_a( data )
+    var valdesc = MDBUtil.from_a( value )
     Debug.out("DBI update Keylen "+keydesc.size.string())
     Debug.out("DBI update Datlen "+valdesc.size.string())
 

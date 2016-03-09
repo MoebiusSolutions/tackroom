@@ -78,14 +78,14 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
      let err = @mdb_cursor_get( _mdbcur, keyp, datap, op )
      (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
     
-  fun ref update( key: MDBdata, data: MDBdata, flags: FlagMask = 0 ) =>
+  fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) =>
     """
     Store by cursor.
     This function stores key/data pairs into the database.
     The cursor is positioned at the new item, or on failure usually near it.
     """
     var keyp = MDBUtil.from_a(key)
-    var datap = MDBUtil.from_a(data)
+    var datap = MDBUtil.from_a(value)
     let err = @mdb_cursor_put( _mdbcur, keyp, datap, flags )
 
   fun ref delete( flags: FlagMask = 0 ) =>

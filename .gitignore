@@ -4,6 +4,7 @@
 bin/*
 # Ignore operational files
 *.log
+*.mdb
 # Ignore generated documentation files
 *.html
 *.css
