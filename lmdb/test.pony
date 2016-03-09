@@ -38,6 +38,9 @@ actor Main
     dbe.close()		    
 
   fun ref a2s( a: Array[U8] val ) : String ref =>
+    """
+    Tedious function to convert Array[U8] to String.
+    """
     var s: String ref = recover ref String.create( a.size() ) end
     var n: USize = 0
     while n < a.size() do

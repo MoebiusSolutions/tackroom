@@ -1,6 +1,7 @@
 // Library major version 0.9.70
 // The release date of this library version "December 19, 2015"
 
+use "debug"
 use "lib:lmdb"  // Link against the lmdb library.
 
 // A whole lot of FFI calls
@@ -13,7 +14,7 @@ use @mdb_env_open[Stat]( env: Pointer[MDBenv] tag,
 use @mdb_env_copy[Stat]( env: Pointer[MDBenv], path: Pointer[U8] tag )
 use @mdb_env_copy2[Stat]( env: Pointer[MDBenv], path: Pointer[U8] tag,
 	flags: FlagMask )
-use @mdb_env_stat[None]( env: Pointer[MDBenv], stat: Pointer[MDBstat] )
+use @mdb_env_stat[None]( env: Pointer[MDBenv], stat: MDBstat )
 use @mdb_env_info[Stat]( env: Pointer[MDBenv] tag, stat: Pointer[MDBinfo] )
 use @mdb_env_sync[Stat]( env: Pointer[MDBenv], force: FlagMask )
 use @mdb_env_close[None]( env: Pointer[MDBenv] )
@@ -154,7 +155,7 @@ class MDBEnvironment
     Return statistics about the environment
     """
     var statp: MDBstat = MDBstat.create()
-    @mdb_env_stat( _mdbenv, addressof statp )
+    @mdb_env_stat( _mdbenv, statp )
     statp
 
   fun ref flush( force: Bool = false ) =>
@@ -262,6 +263,7 @@ class MDBEnvironment
     """
     Start a transaction within this environment.
     """
+    Debug.out("Env begin flags=" + flags.string())
     var txnhdl: Pointer[MDBtxn] = Pointer[MDBtxn].create()
     let err = match parent
       | None =>

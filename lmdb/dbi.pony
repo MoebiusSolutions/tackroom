@@ -1,21 +1,20 @@
 use "debug"
 
 use @mdb_dbi_close[None]( env: Pointer[MDBenv], dbi: Pointer[MDBdbi] )
-use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
-    dbstat: Pointer[MDBstat] )
+use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], dbstat: MDBstat )
 use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBValSend], data: Pointer[MDBValSend],
+      key: MDBValSend, data: MDBValSend,
       flags: FlagMask )
 use @mdb_del[Stat]( txn: Pointer[MDBtxn] tag, dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBValSend], data: Pointer[MDBValSend] )
+      key: MDBValSend, data: (MDBValSend | Pointer[U8]) )
 use @mdb_dbi_flags[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
       flags: Pointer[U32] )
 use @mdb_get[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi] tag,
-      key: Pointer[MDBValSend],
-      data: Pointer[MDBValReceive] )
+      key: MDBValSend,
+      data: MDBValReceive )
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
 	cur: Pointer[Pointer[MDBcur]] )
@@ -115,7 +114,7 @@ class MDBDatabase
     Retrieve statistics for a database.
     """
     var dbstats = MDBstat.create()
-    let err = @mdb_stat( _mdbtxn, _mdbdbi, addressof dbstats )
+    let err = @mdb_stat( _mdbtxn, _mdbdbi, dbstats )
     dbstats
 
   fun ref flags(): FlagMask =>
@@ -166,9 +165,7 @@ class MDBDatabase
      """
     var data: MDBValReceive = MDBValReceive.create()
     var keybuf = MDBUtil.from_a(key)
-    let err = @mdb_get( _mdbtxn, _mdbdbi,
-       addressof keybuf,
-       addressof data)
+    let err = @mdb_get( _mdbtxn, _mdbdbi, keybuf, data)
     _env.report_error( err )
      MDBUtil.to_a( data )
 
@@ -184,8 +181,9 @@ class MDBDatabase
     var valdesc = MDBUtil.from_a( data )
     Debug.out("DBI update Keylen "+keydesc.size.string())
     Debug.out("DBI update Datlen "+valdesc.size.string())
+
     let err = @mdb_put( _mdbtxn, _mdbdbi,
-         addressof keydesc, addressof valdesc, flag )
+         keydesc, valdesc, flag )
     _env.report_error( err )
 
   fun ref delete( key: MDBdata, data: (MDBdata | None) = None ) =>
@@ -203,15 +201,11 @@ class MDBDatabase
     var keydesc = MDBUtil.from_a(key)
     match data
     | None =>
-	let err = @mdb_del( _mdbtxn, _mdbdbi,
-	addressof keydesc,
-	Pointer[MDBValSend].create() )
+	let err = @mdb_del( _mdbtxn, _mdbdbi, keydesc, Pointer[U8].create() )
 	_env.report_error( err )
     | let d: Array[U8] =>
 	var valdesc = MDBUtil.from_a( d )
-	let err = @mdb_del( _mdbtxn, _mdbdbi,
-	addressof keydesc,
-	addressof valdesc )
+	let err = @mdb_del( _mdbtxn, _mdbdbi, keydesc, valdesc )
 	_env.report_error( err )
     end
 

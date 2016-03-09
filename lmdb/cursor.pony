@@ -1,8 +1,7 @@
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
-   key: Pointer[MDBValReceive], data: Pointer[MDBValReceive], op: U32 )
+   key: MDBValReceive, data: MDBValReceive, op: U32 )
 use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
-    key: Pointer[MDBValSend], data: Pointer[MDBValSend],
-    flags: FlagMask)
+    key: MDBValSend, data: MDBValSend, flags: FlagMask)
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
 use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
 use @mdb_cursor_close[None]( cur: Pointer[MDBcur] )
@@ -76,7 +75,7 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
      """
      var keyp = MDBValReceive.create()
      var datap = MDBValReceive.create()
-     let err = @mdb_cursor_get( _mdbcur, addressof keyp, addressof datap, op )
+     let err = @mdb_cursor_get( _mdbcur, keyp, datap, op )
      (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
     
   fun ref update( key: MDBdata, data: MDBdata, flags: FlagMask = 0 ) =>
@@ -87,9 +86,7 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
     """
     var keyp = MDBUtil.from_a(key)
     var datap = MDBUtil.from_a(data)
-    let err = @mdb_cursor_put( _mdbcur,
-         addressof keyp, addressof datap,
-	 flags )
+    let err = @mdb_cursor_put( _mdbcur, keyp, datap, flags )
 
   fun ref delete( flags: FlagMask = 0 ) =>
     """
