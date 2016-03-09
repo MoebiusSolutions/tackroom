@@ -82,7 +82,7 @@ class MDBTransaction
     """
     let err = @mdb_txn_renew( _mdbtxn )
 
-  fun ref opendb( name: (String | None),
+  fun ref open( name: (String | None),
 		flags: FlagMask = 0 ): MDBDatabase =>
     """
     Open a database in the environment.

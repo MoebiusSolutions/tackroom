@@ -5,7 +5,6 @@ use "lib:lmdb"  // Link against the lmdb library.
 
 // A whole lot of FFI calls
 
-use @mdb_strerror[Pointer[U8]]( err: Stat )
 use @mdb_env_create[Stat]( env: Pointer[Pointer[MDBenv]] )
 use @mdb_version[None]( major: Pointer[USize],
 	minor: Pointer[USize], patch: Pointer[USize] )
@@ -21,7 +20,7 @@ use @mdb_env_close[None]( env: Pointer[MDBenv] )
 use @mdb_env_set_flags[Stat]( env: Pointer[MDBenv], flags: FlagMask, onoff: U32)
 use @mdb_env_get_flags[Stat]( env: Pointer[MDBenv], flags: Pointer[FlagMask] )
 use @mdb_env_get_path[Stat]( env: Pointer[MDBenv] tag,
-	path: Pointer[Pointer[U8]] )
+	path: Pointer[Pointer[U8] val] )
 use @mdb_env_set_mapsize[Stat]( env:Pointer[MDBenv], size: USize )
 use @mdb_env_set_maxreaders[Stat]( env: Pointer[MDBenv] tag, count: USize )
 use @mdb_env_get_maxreaders[Stat]( env: Pointer[MDBenv] tag, count: Pointer[USize] )
@@ -33,9 +32,11 @@ use @mdb_txn_begin[Stat]( env: Pointer[MDBenv],
 	parent: Pointer[MDBtxn] tag,
 	flags: FlagMask,
 	txn: Pointer[Pointer[MDBtxn]] )
-use @mdb_errstr[Pointer[U8]]( err: Stat )
-type Stat is I32
-type FlagMask is U32
+use @mdb_strerror[Pointer[U8]]( err: Stat )
+
+// Some value sizes that might need to change.
+type Stat is I32       // Status returns from the FFI calls
+type FlagMask is U32   // Bitmasks for options on some calls
 
 // Opaque structures for actual LMDB handles.
 primitive MDBenv  // The overall LMDB Environment
@@ -122,7 +123,10 @@ class MDBEnvironment
     Open the environment, associating it with a backing file.  This
     will contain one or more "databases".
     """
-    let err = @mdb_env_open( _mdbenv, path.cstring(), flags, mode )
+    let err = @mdb_env_open( _mdbenv,
+	path.cstring(),
+	flags or MDBenvflag.notls(),  // Force not using Thread Local Storage
+	mode )
     report_error( err )
  
   fun ref copy( path: String, flags: FlagMask = 0 ) =>
@@ -184,10 +188,10 @@ class MDBEnvironment
     """
     Get the file system path where the environment is stored.
     """
-    var sptr: Pointer[U8] = Pointer[U8].create()
+    var sptr: Pointer[U8] val = recover val Pointer[U8].create() end
     report_error( @mdb_env_get_path( _mdbenv, addressof sptr ))
     // We have to copy the string because it is in the mapped area.
-    String.copy_cstring( sptr )
+    recover val String.copy_cstring( sptr ) end
 
   fun ref set_mapsize( size: USize ) =>
     """
@@ -268,7 +272,7 @@ class MDBEnvironment
 	    @mdb_txn_begin( _mdbenv,
 		p.handle(),
 		flags, addressof txnhdl )
-      else FlagMask(0) end
+      else Stat(0) end
     report_error( err )
 	
     MDBTransaction.create( this, txnhdl )
@@ -284,8 +288,8 @@ class MDBEnvironment
     match _notifier
       | None => None
       | let n: MDBNotify =>
-		let msg = String.from_cstring( @mdb_errstr( code ) )
-		n.fail( this, code, consume msg )
+	  let msg = recover val String.from_cstring( @mdb_strerror( code ) ) end
+	  n.fail( this, code, consume msg )
     end
 
   fun ref getenv(): Pointer[MDBenv] =>
