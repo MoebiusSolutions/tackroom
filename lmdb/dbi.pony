@@ -1,3 +1,5 @@
+use "debug"
+
 use @mdb_dbi_close[None]( env: Pointer[MDBenv], dbi: Pointer[MDBdbi] )
 use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
     dbstat: Pointer[MDBstat] )
@@ -159,31 +161,32 @@ class MDBDatabase
     items requires the use of cursor.get().
     The memory pointed to by the returned values is owned by the
     database. The caller need not dispose of the memory, and may not
- * modify it in any way. For values returned in a read-only transaction
- * any modification attempts will cause a SIGSEGV.
- * @note Values returned from the database are valid only until a
- * subsequent update operation, or the end of the transaction.
- """
-     var data: MDBValReceive = MDBValReceive.create()
-     var keybuf = MDBUtil.from_a(key)
-     let err = @mdb_get( _mdbtxn, _mdbdbi,
+    modify it in any way. For values returned in a read-only transaction
+    any modification attempts will cause a SIGSEGV.
+     """
+    var data: MDBValReceive = MDBValReceive.create()
+    var keybuf = MDBUtil.from_a(key)
+    let err = @mdb_get( _mdbtxn, _mdbdbi,
        addressof keybuf,
        addressof data)
+    _env.report_error( err )
      MDBUtil.to_a( data )
 
   fun ref update( key: MDBdata, data: MDBdata, flag: FlagMask = 0 ) =>
     """
     Store items into a database.
- *
- * This function stores key/data pairs in the database. The default behavior
- * is to enter the new key/data pair, replacing any previously existing key
- * if duplicates are disallowed, or adding a duplicate data item if
- * duplicates are allowed (#MDB_DUPSORT).
-     """
-     var keydesc = MDBUtil.from_a( key )
-     var valdesc = MDBUtil.from_a( data )
-     let err = @mdb_put( _mdbtxn, _mdbdbi,
+    This function stores key/data pairs in the database. The default behavior
+    is to enter the new key/data pair, replacing any previously existing key
+    if duplicates are disallowed, or adding a duplicate data item if
+    duplicates are allowed (DUPSORT).
+    """
+    var keydesc = MDBUtil.from_a( key )
+    var valdesc = MDBUtil.from_a( data )
+    Debug.out("DBI update Keylen "+keydesc.size.string())
+    Debug.out("DBI update Datlen "+valdesc.size.string())
+    let err = @mdb_put( _mdbtxn, _mdbdbi,
          addressof keydesc, addressof valdesc, flag )
+    _env.report_error( err )
 
   fun ref delete( key: MDBdata, data: (MDBdata | None) = None ) =>
     """
@@ -203,11 +206,13 @@ class MDBDatabase
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 	addressof keydesc,
 	Pointer[MDBValSend].create() )
+	_env.report_error( err )
     | let d: Array[U8] =>
 	var valdesc = MDBUtil.from_a( d )
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 	addressof keydesc,
 	addressof valdesc )
+	_env.report_error( err )
     end
 
   fun ref cursor(): MDBCursor =>
@@ -225,5 +230,6 @@ class MDBDatabase
     """
     var cur = Pointer[MDBcur].create()
     let err = @mdb_cursor_open( _mdbtxn, _mdbdbi, addressof cur )
+    _env.report_error( err )
     MDBCursor.create( _env, cur )
 

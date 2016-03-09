@@ -14,13 +14,20 @@ actor Main
     dbe.open( "lmdb.mdb", 0, 0b111000000 )
     env.out.print(" Files opened")
 
+    let maxkey = dbe.maxkeysize()
+    env.out.print("  Max key size "+maxkey.string())
+
     let txn = dbe.begin( 0 )
     env.out.print(" Txn started")
 
     let dbi = txn.open( None, 0 )
-    env.out.print(" DB opened")
+    env.out.print(" Default DB opened")
 
-    dbi.update( s2a("Orange"), s2a("fruit"))
+    let key = s2a("Orange")
+    let dat = s2a("fruit")
+    env.out.print("  Key length "+key.size().string())
+    env.out.print("  Dat length "+dat.size().string())
+    dbi.update( key, dat )
     env.out.print(" Record written")
 
     let result = dbi( s2a("Orange") )
@@ -34,8 +41,8 @@ actor Main
     var s: String ref = recover ref String.create( a.size() ) end
     var n: USize = 0
     while n < a.size() do
-	    try s(n) = a(n) end
-	    n = n + 1
+      try s(n) = a(n) end
+      n = n + 1
     end
     s
   
@@ -44,7 +51,7 @@ actor Main
       var a: Array[U8] = Array[U8].create( s.size() )
       var n: USize = 0
       while n < s.size() do
-	try a(n) = s(n) end
+	try a.push( s(n) ) end
         n = n + 1
       end   
       a
