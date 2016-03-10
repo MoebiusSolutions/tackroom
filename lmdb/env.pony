@@ -45,6 +45,36 @@ primitive MDBtxn  // A transaction within the environment
 primitive MDBdbi  // A database within the environment
 primitive MDBcur  // A cursor for sequential operations
 
+// Error codes returned from most operations
+primitive MDBerror
+  fun success(): I32 => 0	/**	Successful result */
+  fun keyexist(): I32 => -30799	/** key/data pair already exists */
+  fun notfound(): I32 => -30798	/** key/data pair not found (EOF) */
+  fun page_notfound(): I32 => -30797	/** Requested page not found - this usually indicates corruption */
+  fun corrupted(): I32 => -30796	/** Located page was wrong type */
+  fun panic	(): I32 => -30795	/** Update of meta page failed or environment had fatal error */
+  fun version_mismatch(): I32 => -30794	/** Environment version mismatch */
+  fun invalid(): I32 => -30793	/** File is not a valid LMDB file */
+  fun map_full(): I32 => -30792	/** Environment mapsize reached */
+  fun dbs_full(): I32 => -30791	/** Environment maxdbs reached */
+  fun readers_full(): I32 => -30790	/** Environment maxreaders reached */
+  fun tls_full(): I32 => -30789	/** Too many TLS keys in use - Windows only */
+  fun txn_full(): I32 => -30788	/** Txn has too many dirty pages */
+  fun cursor_full(): I32 => -30787	/** Cursor stack too deep - internal error */
+  fun page_full(): I32 => -30786	/** Page has not enough space - internal error */
+  fun map_resized(): I32 => -30785	/** Database contents grew beyond environment mapsize */
+  fun incompatible(): I32 => -30784	/** Operation and DB incompatible,
+	  or DB type changed. This can mean:
+	  * The operation expects an #MDB_DUPSORT / #MDB_DUPFIXED database.
+	  * Opening a named DB when the unnamed DB has #MDB_DUPSORT / #MDB_INTEGERKEY.
+	  * Accessing a data record as a database, or vice versa.
+	  * The database was dropped and recreated with different flags. */
+
+  fun bad_rslot	(): I32 => -30783 /** Invalid reuse of reader locktable slot */
+  fun bad_txn(): I32 => -30782	/** Transaction must abort, has a child, or is invalid */
+  fun bad_valsize(): I32 => -30781  /** Unsupported size of key/DB name/data, or wrong DUPFIXED size */
+  fun bad_dbi(): I32 => -30780	/** DBI was changed unexpectedly */
+
 //  Flags on creating an environment
 primitive MDBenvflag
   fun fixedmap(): FlagMask => 0x01   // mmap at a fixed address (experimental)
@@ -109,7 +139,7 @@ class MDBEnvironment
   var _mdbenv: Pointer[MDBenv] = Pointer[MDBenv].create()
   let _notifier: (MDBNotify | None)
 
-  new create( note: (MDBNotify | None) = None ) =>
+  new create( note: (MDBNotify | None) = None ) ? =>
     """
     Create a new MDBEnvironment context.  This does not open any files
     yet;  that happens in open().
@@ -119,7 +149,7 @@ class MDBEnvironment
     let err = @mdb_env_create( addressof _mdbenv )
     report_error( err )
 
-  fun ref open( path: String, flags: FlagMask, mode: USize ) =>
+  fun ref open( path: String, flags: FlagMask, mode: USize ) ? =>
     """
     Open the environment, associating it with a backing file.  This
     will contain one or more "databases".
@@ -130,7 +160,7 @@ class MDBEnvironment
 	mode )
     report_error( err )
  
-  fun ref copy( path: String, flags: FlagMask = 0 ) =>
+  fun ref copy( path: String, flags: FlagMask = 0 ) ? =>
     """
     Make a copy of the entire environment.  This can be used to
     create backups.
@@ -158,7 +188,7 @@ class MDBEnvironment
     @mdb_env_stat( _mdbenv, statp )
     statp
 
-  fun ref flush( force: Bool = false ) =>
+  fun ref flush( force: Bool = false ) ? =>
     """
     Insure that the underlying file is up to date.
     """
@@ -177,7 +207,7 @@ class MDBEnvironment
       @mdb_env_set_flags( _mdbenv, flags, 0 )
     end
 
-  fun ref get_flags(): FlagMask =>
+  fun ref get_flags(): FlagMask ? =>
     """
     Get current Environment flags
     """
@@ -185,7 +215,7 @@ class MDBEnvironment
     report_error( @mdb_env_get_flags( _mdbenv, addressof flags ))
     flags
 
-  fun ref get_path(): String =>
+  fun ref get_path(): String ? =>
     """
     Get the file system path where the environment is stored.
     """
@@ -194,7 +224,7 @@ class MDBEnvironment
     // We have to copy the string because it is in the mapped area.
     recover val String.copy_cstring( sptr ) end
 
-  fun ref set_mapsize( size: USize ) =>
+  fun ref set_mapsize( size: USize ) ? =>
     """
     Set the size of the memory map to use for this environment.
     The size should be a multiple of the OS page size. The default is
@@ -205,7 +235,7 @@ class MDBEnvironment
     """
     report_error( @mdb_env_set_mapsize( _mdbenv, size ))
 
-  fun ref set_maxslots( count: USize ) =>
+  fun ref set_maxslots( count: USize ) ? =>
     """
     Set the maximum number of threads/reader slots for the environment.
     This defines the number of slots in the lock table that is used to
@@ -218,7 +248,7 @@ class MDBEnvironment
     """
     report_error( @mdb_env_set_maxreaders( _mdbenv, count ))
 
-  fun ref slots() =>
+  fun ref slots() ? =>
     """
     Get the maximum number of threads/reader slots for the environment.
     """
@@ -226,7 +256,7 @@ class MDBEnvironment
     report_error( @mdb_env_get_maxreaders( _mdbenv, addressof count ))
     count
 
-  fun ref set_maxdb( count: USize ) =>
+  fun ref set_maxdb( count: USize ) ? =>
     """
     Set the maximum number of named databases for the environment.
     This function is only needed if multiple databases will be used in the
@@ -246,7 +276,7 @@ class MDBEnvironment
     """
     @mdb_env_get_maxkeysize( _mdbenv )
 
-  fun ref set_appinfo( infop: Pointer[Any] ) =>
+  fun ref set_appinfo( infop: Pointer[Any] ) ? =>
     """
     Set application information associated with the Environment.
     """
@@ -259,7 +289,7 @@ class MDBEnvironment
     @mdb_env_get_userctx( _mdbenv )
 
   fun ref begin( flags: FlagMask,
-    parent: (MDBTransaction | None) = None ): MDBTransaction =>
+    parent: (MDBTransaction | None) = None ): MDBTransaction ? =>
     """
     Start a transaction within this environment.
     """
@@ -279,20 +309,22 @@ class MDBEnvironment
 	
     MDBTransaction.create( this, txnhdl )
 
-  fun ref report_error( code: Stat ) =>
+  fun ref report_error( code: Stat ) ? =>
     """
     If the user has supplied a notifier class, convert errors to strings
     and send them there.
     """
     // Zero is no error at all.
     if code == 0 then return end
-
+    // If a Notify class was provided, give it a chance
     match _notifier
       | None => None
       | let n: MDBNotify =>
 	  let msg = recover val String.from_cstring( @mdb_strerror( code ) ) end
 	  n.fail( this, code, consume msg )
     end
+    // Now error
+    error
 
   fun ref getenv(): Pointer[MDBenv] =>
     _mdbenv

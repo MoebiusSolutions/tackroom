@@ -33,7 +33,7 @@ class MDBTransaction
     """
     @mdb_txn_id( _mdbtxn )
 
-  fun ref commit() =>
+  fun ref commit() ? =>
     """
     Commit all the operations of a transaction into the database.
     The transaction handle is freed. It and its cursors must not be used
@@ -83,7 +83,7 @@ class MDBTransaction
     let err = @mdb_txn_renew( _mdbtxn )
 
   fun ref open( name: (String | None),
-		flags: FlagMask = 0 ): MDBDatabase =>
+		flags: FlagMask = 0 ): MDBDatabase ? =>
     """
     Open a database in the environment.
     A database handle denotes the name and parameters of a database,

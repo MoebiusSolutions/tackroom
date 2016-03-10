@@ -1,5 +1,6 @@
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
-   key: MDBValReceive, data: MDBValReceive, op: U32 )
+	key: (MDBValReceive | MDBValSend),
+	data: MDBValReceive, op: U32 )
 use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
     key: MDBValSend, data: MDBValSend, flags: FlagMask)
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
@@ -7,7 +8,7 @@ use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
 use @mdb_cursor_close[None]( cur: Pointer[MDBcur] )
 
 // Op-codes for cursor operations.			 
-primitive MDBcursorop
+primitive MDBop
   fun first(): U32 => 0           // Position at first key/data item
   fun first_dup(): U32 => 1       // Position at first data item of current key.
   fun get_both(): U32 => 2        // Seek to first key/data for DUPSORT
@@ -52,33 +53,36 @@ class MDBCursor
  * The cursor may be associated with a new read-only transaction, and
  * referencing the same database handle as it was created with.
  * This may be done whether the previous transaction is live or dead.
- * @param[in] txn A transaction handle returned by #mdb_txn_begin()
- * @param[in] cursor A cursor handle returned by #mdb_cursor_open()
- * @return A non-zero error value on failure and 0 on success. Some possible
- * errors are:
- * <ul>
- *	<li>EINVAL - an invalid parameter was specified.
- * </ul>
-
 int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
 */
 
-  fun ref apply( op: U32 ): (MDBdata, MDBdata) =>
+  fun ref apply( op: U32 ): (MDBdata, MDBdata) ? =>
     """
     Retrieve by cursor.
-    This function retrieves key/data pairs from the database.
-    The address and length of the key are returned in the object to
-    which \b key refers (except for the case of the SET option, in which
-    the \b key object is unchanged), and the address and length of the
-    data are returned in the object to which \b data refers.
-    See MDBTransaction.get() for restrictions on using the output values.
+    This function retrieves key/data pairs from the database.  The
+    op parameter determines how the cursor is to move, and the returned
+    values are the key and data of the record found there.
      """
      var keyp = MDBValReceive.create()
      var datap = MDBValReceive.create()
      let err = @mdb_cursor_get( _mdbcur, keyp, datap, op )
+     _env.report_error( err )
      (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
-    
-  fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) =>
+
+  fun ref seek( key: MDBdata ) ? =>
+    var keyp = MDBUtil.from_a(key)
+    var datap = MDBValReceive.create()
+    let err = @mdb_cursor_get( _mdbcur, keyp, datap, MDBop.set() )
+    _env.report_error( err )
+
+/*
+    The address and length of the key are returned in the object to
+    which \b key refers (except for the case of the SET option, in which
+    the \b key object is unchanged), and the address and length of the
+    data are returned in the object to which \b data refers.
+*/
+
+  fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) ? =>
     """
     Store by cursor.
     This function stores key/data pairs into the database.
@@ -87,8 +91,9 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
     var keyp = MDBUtil.from_a(key)
     var datap = MDBUtil.from_a(value)
     let err = @mdb_cursor_put( _mdbcur, keyp, datap, flags )
+     _env.report_error( err )
 
-  fun ref delete( flags: FlagMask = 0 ) =>
+  fun ref delete( flags: FlagMask = 0 ) ? =>
     """
     Delete current key/data pair
     This function deletes the key/data pair to which the cursor refers.
@@ -96,8 +101,9 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
     This flag may only be specified if the database was opened with DUPSORT.
     """
     let err = @mdb_cursor_del( _mdbcur, flags )
+     _env.report_error( err )
 
-  fun ref dupcount(): U32 =>
+  fun ref dupcount(): U32 ? =>
     """
     Count of duplicates for current key.
     This call is only valid on databases that support sorted duplicate
@@ -105,4 +111,5 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
     """
     var count: U32 = 0
     let err = @mdb_cursor_count( _mdbcur, addressof count )
+     _env.report_error( err )
     count

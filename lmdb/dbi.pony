@@ -24,10 +24,10 @@ primitive MDBopenflag
   fun reversekey(): FlagMask => 0x02   // use reverse string keys
   fun dupsort(): FlagMask => 0x04     // use sorted duplicates
   fun integerkey(): FlagMask => 0x08  // numeric keys in native byte order: either unsigned int or size_t.
-  fun dupfixed(): FlagMask => 0x10   // with #MDB_DUPSORT, sorted dup items have fixed size
-  fun integerdup(): FlagMask => 0x20 // with #MDB_DUPSORT, dups are #MDB_INTEGERKEY-style integers
-  fun reversedup(): FlagMask => 0x40 // with #MDB_DUPSORT, use reverse string dups
-  fun create(): FlagMask => 0x40000  // create DB if not already existing
+  fun dupfixed(): FlagMask => 0x10   // with DUPSORT, sorted dup items have fixed size
+  fun integerdup(): FlagMask => 0x20 // with DUPSORT, dups are INTEGERKEY-style integers
+  fun reversedup(): FlagMask => 0x40 // with DUPSORT, use reverse string dups
+  fun createdb(): FlagMask => 0x40000  // create DB if not already existing
 
 // Flags on write operations.
 primitive MDBputflag
@@ -152,7 +152,7 @@ class MDBDatabase
  */
 //int  mdb_drop(MDB_mdbtxn *txn, Mdb_dbi dbi, int del);
 
-  fun ref apply( key: Array[U8] ): Array[U8] =>
+  fun ref apply( key: Array[U8] ): Array[U8] ? =>
     """
     This function retrieves key/data pairs from the database.
     If the database supports duplicate keys (#MDB_DUPSORT) then the
@@ -169,7 +169,7 @@ class MDBDatabase
     _env.report_error( err )
      MDBUtil.to_a( data )
 
-  fun ref update( key: MDBdata, value: MDBdata, flag: FlagMask = 0 ) =>
+  fun ref update( key: MDBdata, value: MDBdata, flag: FlagMask = 0 ) ? =>
     """
     Store items into a database.
     This function stores key/data pairs in the database. The default behavior
@@ -186,7 +186,7 @@ class MDBDatabase
          keydesc, valdesc, flag )
     _env.report_error( err )
 
-  fun ref delete( key: MDBdata, data: (MDBdata | None) = None ) =>
+  fun ref delete( key: MDBdata, data: (MDBdata | None) = None ) ? =>
     """
     This function removes key/data pairs from the database.
     If the database does not support sorted duplicate data items
@@ -209,7 +209,7 @@ class MDBDatabase
 	_env.report_error( err )
     end
 
-  fun ref cursor(): MDBCursor =>
+  fun ref cursor(): MDBCursor ? =>
     """
     Create a cursor handle.
     A cursor is associated with a specific transaction and database.
