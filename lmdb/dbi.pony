@@ -7,7 +7,7 @@ use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
       key: MDBValSend, data: MDBValSend,
       flags: FlagMask )
 use @mdb_del[Stat]( txn: Pointer[MDBtxn] tag, dbi: Pointer[MDBdbi] tag,
-      key: MDBValSend, data: (MDBValSend | Pointer[U8]) )
+      key: MDBValSend, data: _OptionalData )
 use @mdb_dbi_flags[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
       flags: Pointer[U32] )
@@ -18,7 +18,10 @@ use @mdb_get[Stat]( txn: Pointer[MDBtxn],
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
 	cur: Pointer[Pointer[MDBcur]] )
+use @mdb_drop[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], del: U32 )
 
+type _OptionalData is Maybe[MDBValSend]
+	
 // Flags on opening a database.  These can be combined.
 primitive MDBopenflag
   fun reversekey(): FlagMask => 0x02   // use reverse string keys
@@ -141,16 +144,15 @@ class MDBDatabase
     """
     @mdb_dbi_close( _mdbenv, _mdbdbi )
 
-/* @brief Empty or delete+close a database.
- *
- * See #mdb_dbi_close() for restrictions about closing the DB handle.
- * @param[in] txn A transaction handle returned by #mdb_mdbtxn_begin()
- * @param[in] dbi A database handle returned by #mdb_dbi_open()
- * @param[in] del 0 to empty the DB, 1 to delete it from the
- * environment and close the DB handle.
- * @return A non-zero error value on failure and 0 on success.
- */
-//int  mdb_drop(MDB_mdbtxn *txn, Mdb_dbi dbi, int del);
+  fun ref drop( del: Bool = false ) ? =>
+    """
+    Empty or delete+close a database.
+    See dbi.close() for restrictions about closing the DB handle.
+    Paramater is 'false' to empty the DB, true to delete it from the
+    environment and close the DB handle.
+    """
+    let err = @mdb_drop( _mdbtxn, _mdbdbi, if del then 1 else 0 end )
+    _env.report_error( err )
 
   fun ref apply( key: Array[U8] ): Array[U8] ? =>
     """
@@ -201,11 +203,13 @@ class MDBDatabase
     var keydesc = MDBUtil.from_a(key)
     match data
     | None =>
-	let err = @mdb_del( _mdbtxn, _mdbdbi, keydesc, Pointer[U8].create() )
+        let err = @mdb_del( _mdbtxn, _mdbdbi,
+            keydesc, _OptionalData.none())
 	_env.report_error( err )
     | let d: Array[U8] =>
 	var valdesc = MDBUtil.from_a( d )
-	let err = @mdb_del( _mdbtxn, _mdbdbi, keydesc, valdesc )
+	let err = @mdb_del( _mdbtxn, _mdbdbi,
+		keydesc, _OptionalData.create(valdesc) )
 	_env.report_error( err )
     end
 
@@ -227,3 +231,42 @@ class MDBDatabase
     _env.report_error( err )
     MDBCursor.create( _env, cur )
 
+  fun all(): MDBIterator =>
+    let iter = MDBIterator.create( this, None )
+
+primitive _All
+primitive _Group
+type _IterType is (_All | _Group)
+
+class MDBIterator
+  var first: Bool = true
+  let curs: MDBCursor
+  let start: (MDBdata | None)  
+
+  new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) =>
+    curs = dbi.cursor()
+    kind = kind'
+    start = start'
+
+  fun ref has_next(): Bool => true
+  fun ref next(): (MDBdata, MDBdata) ? =>
+    """
+    """
+    var k: Array[U8] = Array[U8].create(0)
+    var v: Array[U8] = Array[U8].create(0)
+
+    if first then
+      first = false
+      match start
+        | None => curs( MDBop.first() )
+	| let skey: MDBdata => curs.seek( skey )
+	end
+    else
+      match kind
+        | None => curs( MDBop.next() )
+        | let skey: MDBdata => curs( MDBop.next_dup() )
+      end
+    end
+
+  fun ref dispose() =>
+    curs.close()

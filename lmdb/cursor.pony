@@ -6,6 +6,7 @@ use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
 use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
 use @mdb_cursor_close[None]( cur: Pointer[MDBcur] )
+use @mdb_cursor_renew[Stat]( txn: Pointer[MDBtxn], curs: Pointer[MDBcur] )
 
 // Op-codes for cursor operations.			 
 primitive MDBop
@@ -44,18 +45,20 @@ class MDBCursor
     Its transaction must still be live if it is a write-transaction.
     """
     @mdb_cursor_close( _mdbcur )
-
-/* @brief Renew a cursor handle.
- *
- * A cursor is associated with a specific transaction and database.
- * Cursors that are only used in read-only
- * transactions may be re-used, to avoid unnecessary malloc/free overhead.
- * The cursor may be associated with a new read-only transaction, and
- * referencing the same database handle as it was created with.
- * This may be done whether the previous transaction is live or dead.
-int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
+/*
+  fun ref renew() ? =>
+    """
+    Renew a cursor handle.
+    A cursor is associated with a specific transaction and database.
+    Cursors that are only used in read-only transactions may be re-used,
+    to avoid unnecessary malloc/free overhead.  The cursor may be
+    associated with a new read-only transaction, and referencing the
+    same database handle as it was created with.  This may be done
+    whether the previous transaction is live or dead.
+    """
+    let err = @mdb_cursor_renew( _mdbtxn, _mdbcur )
+    _env>report_error( err )
 */
-
   fun ref apply( op: U32 ): (MDBdata, MDBdata) ? =>
     """
     Retrieve by cursor.
@@ -70,17 +73,14 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
      (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
 
   fun ref seek( key: MDBdata ) ? =>
+    """
+    Position the cursor to the record with a specified key.
+    Nothing is fetched.
+    """
     var keyp = MDBUtil.from_a(key)
     var datap = MDBValReceive.create()
     let err = @mdb_cursor_get( _mdbcur, keyp, datap, MDBop.set() )
     _env.report_error( err )
-
-/*
-    The address and length of the key are returned in the object to
-    which \b key refers (except for the case of the SET option, in which
-    the \b key object is unchanged), and the address and length of the
-    data are returned in the object to which \b data refers.
-*/
 
   fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) ? =>
     """
@@ -95,13 +95,13 @@ int  mdb_cursor_renew(MDB_txn *txn, MDBcursor *cursor);
 
   fun ref delete( flags: FlagMask = 0 ) ? =>
     """
-    Delete current key/data pair
+    Delete current key/data pair.
     This function deletes the key/data pair to which the cursor refers.
-    Flag NODUPDATA - delete all of the data items for the current key.
+    Flag NODUPDATA:  delete all of the data items for the current key.
     This flag may only be specified if the database was opened with DUPSORT.
     """
     let err = @mdb_cursor_del( _mdbcur, flags )
-     _env.report_error( err )
+    _env.report_error( err )
 
   fun ref dupcount(): U32 ? =>
     """

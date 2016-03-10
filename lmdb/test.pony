@@ -45,6 +45,7 @@ try
     mynote.print( false )
     test_all( dbi, env )
     test_group( dbi, env, "Orange" )
+    test_delete( dbi, env, "Tuna" )
     mynote.print( true )
     txn.commit()
     dbe.close()		    
@@ -52,6 +53,17 @@ try
 	env.out.print("Unexpected error")
   end
 
+  fun ref test_delete( dbi: MDBDatabase, env: Env, key: String ) ? =>
+    var cursor = dbi.cursor()
+    var k: Array[U8] = Array[U8].create(0)
+    var v: Array[U8] = Array[U8].create(0)
+    var first: Bool = true
+    env.out.print("Test of deleting '" + key + "' record")
+    cursor.seek( s2a(key) )
+    cursor.delete()
+    cursor.close()
+    test_all( dbi, env )
+		
   fun ref test_all( dbi: MDBDatabase, env: Env ) ? =>
     """
     Loop over all records in the DB.  I would like to be able to write:
