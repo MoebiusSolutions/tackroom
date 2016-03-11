@@ -231,42 +231,91 @@ class MDBDatabase
     _env.report_error( err )
     MDBCursor.create( _env, cur )
 
-  fun all(): MDBIterator =>
-    let iter = MDBIterator.create( this, None )
+  // These functions return record sequence queries that will return
+  // all or a selected subset of a databse, using the Pony iterator notation.
+  fun ref all(): MDBSequence ? => MDBSequence.create( this, None )
+  fun ref group( start: MDBdata ) ? => MDBSequence.create( this, start )
 
-primitive _All
-primitive _Group
-type _IterType is (_All | _Group)
-
-class MDBIterator
+class MDBSequence
+  """
+  The guts of the three kinds of iterators.  This implements the logic
+  of the query.
+  """
   var first: Bool = true
   let curs: MDBCursor
   let start: (MDBdata | None)  
 
-  new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) =>
+  new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) ? =>
     curs = dbi.cursor()
-    kind = kind'
     start = start'
 
-  fun ref has_next(): Bool => true
-  fun ref next(): (MDBdata, MDBdata) ? =>
-    """
-    """
-    var k: Array[U8] = Array[U8].create(0)
-    var v: Array[U8] = Array[U8].create(0)
+  // These three methods generate the actual iterator that Pony will use.
+  // They will call back here to get the data.
+  fun ref pairs()  => MDBPairIter.create( this )
+  fun ref keys()   => MDBKeyIter.create( this )
+  fun ref values() => MDBValIter.create(this )
 
+  fun ref next(): (MDBdata,MDBdata) ? =>
+    """
+    Find and return the next record in the series.
+    """
     if first then
+      // First time thru, get the first record of the desired series,
+      // and clear the first-time flag.
       first = false
       match start
-        | None => curs( MDBop.first() )
 	| let skey: MDBdata => curs.seek( skey )
+	else
+         curs( MDBop.first() )
 	end
     else
-      match kind
-        | None => curs( MDBop.next() )
+      // Subsequent times, get the next record in that series.
+      match start
         | let skey: MDBdata => curs( MDBop.next_dup() )
+	else curs( MDBop.next() )
       end
     end
 
-  fun ref dispose() =>
-    curs.close()
+  fun ref dispose() => curs.close()
+	
+class MDBPairIter is Iterator[(MDBdata,MDBdata)]
+  """
+  Iterator that returns both keys and values
+  """
+  let query: MDBSequence
+  new create( query': MDBSequence ) =>
+    query = query'
+
+  fun ref has_next(): Bool => true
+  fun ref next(): (MDBdata, MDBdata) ? => query.next()
+  fun ref dispose() => query.dispose()
+
+class MDBValIter is Iterator[MDBdata]
+  """
+  Iterator that returns just the values
+  """
+  let query: MDBSequence
+  new create( query': MDBSequence ) =>
+    query = query'
+
+  fun ref has_next(): Bool => true
+  fun ref next(): MDBdata ? =>
+    (let k, let v) = query.next()
+    v
+
+  fun ref dispose() => query.dispose()
+
+class MDBKeyIter is Iterator[MDBdata]
+  """
+  Iterator that returns just the keys
+  """
+  let query: MDBSequence
+  new create( query': MDBSequence ) =>
+    query = query'
+
+  fun ref has_next(): Bool => true
+  fun ref next(): MDBdata ? =>
+    (let k, let v) = query.next()
+    k
+
+  fun ref dispose() => query.dispose()

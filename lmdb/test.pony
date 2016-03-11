@@ -46,6 +46,7 @@ try
     test_all( dbi, env )
     test_group( dbi, env, "Orange" )
     test_delete( dbi, env, "Tuna" )
+    test_loop( dbi, env )
     mynote.print( true )
     txn.commit()
     dbe.close()		    
@@ -63,7 +64,18 @@ try
     cursor.delete()
     cursor.close()
     test_all( dbi, env )
-		
+
+  fun ref test_loop( dbi: MDBDatabase, env: Env ) =>
+    """
+    Loop over all records in the database using the Iterator method.
+    """
+    env.out.print("Test of iterator over all records")
+    with query = dbi.all().pairs() do
+      for (k,v) in query do
+        env.out.print("  " + a2s(k) + " = " + a2s(v))
+        end
+      end
+
   fun ref test_all( dbi: MDBDatabase, env: Env ) ? =>
     """
     Loop over all records in the DB.  I would like to be able to write:

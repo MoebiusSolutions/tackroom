@@ -1,3 +1,5 @@
+/* Interface to cursor operations on LMDB databases. */
+
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
 	key: (MDBValReceive | MDBValSend),
 	data: MDBValReceive, op: U32 )
@@ -72,15 +74,15 @@ class MDBCursor
      _env.report_error( err )
      (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
 
-  fun ref seek( key: MDBdata ) ? =>
+  fun ref seek( key: MDBdata ): (MDBdata,MDBdata) ? =>
     """
     Position the cursor to the record with a specified key.
-    Nothing is fetched.
     """
     var keyp = MDBUtil.from_a(key)
     var datap = MDBValReceive.create()
     let err = @mdb_cursor_get( _mdbcur, keyp, datap, MDBop.set() )
     _env.report_error( err )
+    (key, MDBUtil.to_a(datap))
 
   fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) ? =>
     """
@@ -97,6 +99,7 @@ class MDBCursor
     """
     Delete current key/data pair.
     This function deletes the key/data pair to which the cursor refers.
+
     Flag NODUPDATA:  delete all of the data items for the current key.
     This flag may only be specified if the database was opened with DUPSORT.
     """
@@ -105,9 +108,8 @@ class MDBCursor
 
   fun ref dupcount(): U32 ? =>
     """
-    Count of duplicates for current key.
-    This call is only valid on databases that support sorted duplicate
-    data items DUPSORT.
+    Count of duplicates for current key.  This call is only valid
+    on databases that support sorted duplicate data items, flag DUPSORT.
     """
     var count: U32 = 0
     let err = @mdb_cursor_count( _mdbcur, addressof count )
