@@ -43,10 +43,13 @@ try
     txn = dbe.begin( 0 )
     dbi = txn.open( None, 0 )
     mynote.print( false )
+
     test_all( dbi, env )
     test_group( dbi, env, "Orange" )
     test_delete( dbi, env, "Tuna" )
     test_loop( dbi, env )
+    env.out.print("Done")
+
     mynote.print( true )
     txn.commit()
     dbe.close()		    
@@ -65,7 +68,7 @@ try
     cursor.close()
     test_all( dbi, env )
 
-  fun ref test_loop( dbi: MDBDatabase, env: Env ) =>
+  fun ref test_loop( dbi: MDBDatabase, env: Env ) ? =>
     """
     Loop over all records in the database using the Iterator method.
     """
@@ -76,29 +79,30 @@ try
         end
       end
 
+    env.out.print("Test of iterator over just Orange values")
+    with orange = dbi.group( s2a("Orange") ).values() do
+    for v in orange do
+	    env.out.print("  " + a2s(v))
+    end
+    end
+
   fun ref test_all( dbi: MDBDatabase, env: Env ) ? =>
     """
-    Loop over all records in the DB.  I would like to be able to write:
-	for (k,v) in dbi.all().pairs() do
-	  env.out.print(k,v)
-	end
-    The problem is that if the body of the loop contains a 'break'
-    then there is no place to close the cursor that was created inside
-    the dbi.all() function.
+    Loop over all records in the DB.
     """
     var cursor = dbi.cursor()
     var k: Array[U8] = Array[U8].create(0)
     var v: Array[U8] = Array[U8].create(0)
     var first: Bool = true
-    env.out.print("Test of cursor over all records")
+    env.out.print("Test of cursor over all records in reverse order")
     // Position to first record
     while true do
       try
 	if first then
-          (k,v) = cursor( MDBop.first() )
+          (k,v) = cursor( MDBop.last() )
 	  first = false
         else
-	  (k,v) = cursor( MDBop.next() )
+	  (k,v) = cursor( MDBop.prev() )
         end // if
         env.out.print("  "+a2s(k)+" = "+a2s(v))
       else
@@ -124,7 +128,7 @@ try
     while true do
       try
 	if first then
-          (k,v) = cursor( MDBop.first() )
+          (k,v) = cursor.seek( s2a("Orange") )
 	  first = false
         else
 	  (k,v) = cursor( MDBop.next_dup() )

@@ -181,8 +181,6 @@ class MDBDatabase
     """
     var keydesc = MDBUtil.from_a( key )
     var valdesc = MDBUtil.from_a( value )
-    Debug.out("DBI update Keylen "+keydesc.size.string())
-    Debug.out("DBI update Datlen "+valdesc.size.string())
 
     let err = @mdb_put( _mdbtxn, _mdbdbi,
          keydesc, valdesc, flag )
@@ -234,7 +232,8 @@ class MDBDatabase
   // These functions return record sequence queries that will return
   // all or a selected subset of a databse, using the Pony iterator notation.
   fun ref all(): MDBSequence ? => MDBSequence.create( this, None )
-  fun ref group( start: MDBdata ) ? => MDBSequence.create( this, start )
+  fun ref group( start: MDBdata ): MDBSequence ? =>
+    MDBSequence.create( this, start )
 
 class MDBSequence
   """
@@ -244,6 +243,8 @@ class MDBSequence
   var first: Bool = true
   let curs: MDBCursor
   let start: (MDBdata | None)  
+  var nextkey: MDBdata = MDBdata.create()
+  var nextval: MDBdata = MDBdata.create()
 
   new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) ? =>
     curs = dbi.cursor()
@@ -251,30 +252,45 @@ class MDBSequence
 
   // These three methods generate the actual iterator that Pony will use.
   // They will call back here to get the data.
-  fun ref pairs()  => MDBPairIter.create( this )
-  fun ref keys()   => MDBKeyIter.create( this )
-  fun ref values() => MDBValIter.create(this )
+  fun ref pairs(): MDBPairIter  => MDBPairIter.create( this )
+  fun ref keys(): MDBKeyIter    => MDBKeyIter.create( this )
+  fun ref values(): MDBValIter  => MDBValIter.create(this )
 
-  fun ref next(): (MDBdata,MDBdata) ? =>
+  fun ref has_next(): Bool =>
     """
-    Find and return the next record in the series.
+    Determine whether the next record to be fetched actually exists,
+    according to the query criteria.  In LMDB the only way to find
+    this out is to actually try to fetch the data.  Luckily, this
+    is very fast.
     """
-    if first then
-      // First time thru, get the first record of the desired series,
-      // and clear the first-time flag.
-      first = false
-      match start
-	| let skey: MDBdata => curs.seek( skey )
-	else
-         curs( MDBop.first() )
-	end
+    try
+      (nextkey,nextval) =
+      if first then
+        // First time thru, get the first record of the desired series,
+        // and clear the first-time flag.
+        first = false
+        match start
+	  | let skey: MDBdata => curs.seek( skey )
+	  else
+           curs( MDBop.first() )
+	  end
+      else
+        // Subsequent times, get the next record in that series.
+        match start
+          | let skey: MDBdata => curs( MDBop.next_dup() )
+	  else curs( MDBop.next() )
+        end
+       end
+      true
     else
-      // Subsequent times, get the next record in that series.
-      match start
-        | let skey: MDBdata => curs( MDBop.next_dup() )
-	else curs( MDBop.next() )
-      end
+      false
     end
+	
+  fun ref next(): (MDBdata,MDBdata) =>
+    """
+    Return the next record in the series.  This was actually just fetched.
+    """
+    (nextkey, nextval)
 
   fun ref dispose() => curs.close()
 	
@@ -286,8 +302,8 @@ class MDBPairIter is Iterator[(MDBdata,MDBdata)]
   new create( query': MDBSequence ) =>
     query = query'
 
-  fun ref has_next(): Bool => true
-  fun ref next(): (MDBdata, MDBdata) ? => query.next()
+  fun ref has_next(): Bool => query.has_next()
+  fun ref next(): (MDBdata, MDBdata) => (query.nextkey, query.nextval)
   fun ref dispose() => query.dispose()
 
 class MDBValIter is Iterator[MDBdata]
@@ -298,11 +314,8 @@ class MDBValIter is Iterator[MDBdata]
   new create( query': MDBSequence ) =>
     query = query'
 
-  fun ref has_next(): Bool => true
-  fun ref next(): MDBdata ? =>
-    (let k, let v) = query.next()
-    v
-
+  fun ref has_next(): Bool => query.has_next()
+  fun ref next(): MDBdata => query.nextval
   fun ref dispose() => query.dispose()
 
 class MDBKeyIter is Iterator[MDBdata]
@@ -313,9 +326,6 @@ class MDBKeyIter is Iterator[MDBdata]
   new create( query': MDBSequence ) =>
     query = query'
 
-  fun ref has_next(): Bool => true
-  fun ref next(): MDBdata ? =>
-    (let k, let v) = query.next()
-    k
-
+  fun ref has_next(): Bool => query.has_next()
+  fun ref next(): MDBdata => query.nextkey
   fun ref dispose() => query.dispose()
