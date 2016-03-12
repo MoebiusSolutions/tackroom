@@ -1,26 +1,34 @@
 use "debug"
+use "lib:helper"
+
+// @noop returns its parameter, unchanged.  But we declare different caps
+// for the input and output values, bypassing Pony's type checking.  The
+// authors of LMDB did not have that checking in mind when they designed
+// their API.
+use @noop[Pointer[U8] ref]( input: Pointer[U8] tag )
 
 use @mdb_dbi_close[None]( env: Pointer[MDBenv], dbi: Pointer[MDBdbi] )
 use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], dbstat: MDBstat )
 use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
       dbi: Pointer[MDBdbi] tag,
-      key: MDBValSend, data: MDBValSend,
+      key: MDBValue, data: MDBValue,
       flags: FlagMask )
 use @mdb_del[Stat]( txn: Pointer[MDBtxn] tag, dbi: Pointer[MDBdbi] tag,
-      key: MDBValSend, data: _OptionalData )
+      key: MDBValue, data: _OptionalData )
 use @mdb_dbi_flags[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi],
       flags: Pointer[U32] )
 use @mdb_get[Stat]( txn: Pointer[MDBtxn],
       dbi: Pointer[MDBdbi] tag,
-      key: MDBValSend,
-      data: MDBValReceive )
+      key: MDBValue,
+      data: MDBValue )
 use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
 	cur: Pointer[Pointer[MDBcur]] )
 use @mdb_drop[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], del: U32 )
+use @memmove[Pointer[None]](dst: Pointer[None], src: Pointer[None], len: USize)
 
-type _OptionalData is Maybe[MDBValSend]
+type _OptionalData is Maybe[MDBValue]
 	
 // Flags on opening a database.  These can be combined.
 primitive MDBopenflag
@@ -48,7 +56,8 @@ primitive MDBputflag
 // Data in and out is expressed as arrays of bytes rather then Strings
 // because Strings have an extra zero byte at the end, and have slightly
 // different semantics.
-type MDBdata is Array[U8]
+type MDBdata is (Array[U8] | String)
+/*
 primitive MDBUtil
   """
   Functions to convert between Array[U8] and the LMDB descriptor format.
@@ -56,43 +65,63 @@ primitive MDBUtil
   """
   fun tag null_ptr[A](): Pointer[A] iso^ =>
     @pony_alloc[Pointer[A] iso^](@pony_ctx[Pointer[None] iso](), USize(0))
-  
-  fun tag from_a(a: Array[U8] box): MDBValSend =>
-    MDBValSend(a.size(), a.cstring())
-  
-  fun tag to_a(mv: MDBValReceive): Array[U8] =>
+
+  fun tag from_a(sa: MDBdata): MDBValue =>
+    match sa
+        | let a: Array[U8] => MDBUtil.from_a(a)
+        | let s: String => MDBUtil.from_s(s)
+    else
+	  MDBValue.create()
+    end
+
+  fun tag from_s(s: String box): MDBValue =>
+    MDBValue( s.size(), s.cstring() )
+  fun tag to_a(mv: MDBValue): Array[U8] =>
     """
     Create a Pony Array[U8] from the database information.  We copy the
     data because LMDB gave us a pointer directly into the mapped memory
     area, which can change out from under us when the transaction ends.
     """
     Array[U8].from_cstring(mv.data, mv.size).clone()
-
-struct box MDBValSend
+*/
+struct ref MDBValue
   """
-  Generic structure used for passing keys and data INTO the database.
+  This simple descripter is used as an in/out parameter to some FFI
+  routines.
 
+  Generic structure used for passing keys and data INTO the database.
+  It is 'box': read-only by this actor - writable by others.
   Key sizes must be between 1 and env.maxkeysize() inclusive.
   The same applies to data sizes in databases with the DUPSORT flag.
+
   Other data items can in theory be from 0 to 0xffffffff bytes long.
-  """
-  let size: USize
-  let data: Pointer[U8] tag
-  new box create(size': USize, data': Pointer[U8] tag) =>
-    size = size'; data = data'
-
-struct ref MDBValReceive
-  """
-  Generic structure used for passing keys and data OUT of the database.
-
   Values returned from the database are valid only until a subsequent
   update operation, or the end of the transaction, so we copy any
-  returned data into Pony-space.
-  The fields will be overwritten by LMDB so we just initialize them
-  to zero for now.
+  returned data into Pony-space. The fields will be overwritten by
+  LMDB so we just initialize them to zero for now.
   """
-  var size: USize = 0
-  var data: Pointer[U8] ref = MDBUtil.null_ptr[U8]()
+  var _len: USize
+  // ptr is tag because that is what Array.cstring() returns.
+  var _tptr: Pointer[U8] tag
+
+  new create( arg: (Array[U8] | String| None) = None ) =>
+    match arg
+      | let a: Array[U8] =>
+		_len = a.size()
+		_tptr = a.cstring()
+      | let s: String =>
+		_len = s.size()
+		_tptr = s.cstring()
+    else
+      _len = 0
+      _tptr = Pointer[U8].create()
+    end
+
+  // We use @noop to convert a tag pointer to a ref pointer.
+  fun ref data(): Pointer[U8] ref => @noop(_tptr)
+  fun ref size(): USize => _len
+  fun ref array(): Array[U8] =>
+    Array[U8].from_cstring( @noop(_tptr), _len ).clone()
 
 class MDBDatabase
   """
@@ -154,7 +183,7 @@ class MDBDatabase
     let err = @mdb_drop( _mdbtxn, _mdbdbi, if del then 1 else 0 end )
     _env.report_error( err )
 
-  fun ref apply( key: Array[U8] ): Array[U8] ? =>
+    fun ref apply( key: MDBdata ): Array[U8] ? =>
     """
     This function retrieves key/data pairs from the database.
     If the database supports duplicate keys (#MDB_DUPSORT) then the
@@ -165,11 +194,11 @@ class MDBDatabase
     modify it in any way. For values returned in a read-only transaction
     any modification attempts will cause a SIGSEGV.
      """
-    var data: MDBValReceive = MDBValReceive.create()
-    var keybuf = MDBUtil.from_a(key)
+    var data: MDBValue = MDBValue.create()
+    var keybuf = MDBValue.create( key )
     let err = @mdb_get( _mdbtxn, _mdbdbi, keybuf, data)
     _env.report_error( err )
-     MDBUtil.to_a( data )
+    data.array()
 
   fun ref update( key: MDBdata, value: MDBdata, flag: FlagMask = 0 ) ? =>
     """
@@ -179,8 +208,8 @@ class MDBDatabase
     if duplicates are disallowed, or adding a duplicate data item if
     duplicates are allowed (DUPSORT).
     """
-    var keydesc = MDBUtil.from_a( key )
-    var valdesc = MDBUtil.from_a( value )
+    var keydesc = MDBValue.create(key)
+    var valdesc = MDBValue.create(value)
 
     let err = @mdb_put( _mdbtxn, _mdbdbi,
          keydesc, valdesc, flag )
@@ -198,14 +227,14 @@ class MDBDatabase
     This function will return NOTFOUND if the specified key/data
     pair is not in the database.
     """
-    var keydesc = MDBUtil.from_a(key)
+    var keydesc = MDBValue.create(key)
     match data
     | None =>
         let err = @mdb_del( _mdbtxn, _mdbdbi,
             keydesc, _OptionalData.none())
 	_env.report_error( err )
-    | let d: Array[U8] =>
-	var valdesc = MDBUtil.from_a( d )
+    | let d: MDBdata =>
+	var valdesc = MDBValue.create(d)
 	let err = @mdb_del( _mdbtxn, _mdbdbi,
 		keydesc, _OptionalData.create(valdesc) )
 	_env.report_error( err )
@@ -243,8 +272,8 @@ class MDBSequence
   var first: Bool = true
   let curs: MDBCursor
   let start: (MDBdata | None)  
-  var nextkey: MDBdata = MDBdata.create()
-  var nextval: MDBdata = MDBdata.create()
+  var nextkey: Array[U8] = Array[U8]
+  var nextval: Array[U8] = Array[U8]
 
   new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) ? =>
     curs = dbi.cursor()
@@ -286,7 +315,7 @@ class MDBSequence
       false
     end
 	
-  fun ref next(): (MDBdata,MDBdata) =>
+  fun ref next(): (Array[U8],Array[U8]) =>
     """
     Return the next record in the series.  This was actually just fetched.
     """
@@ -294,7 +323,7 @@ class MDBSequence
 
   fun ref dispose() => curs.close()
 	
-class MDBPairIter is Iterator[(MDBdata,MDBdata)]
+class MDBPairIter is Iterator[(Array[U8],Array[U8])]
   """
   Iterator that returns both keys and values
   """
@@ -303,7 +332,7 @@ class MDBPairIter is Iterator[(MDBdata,MDBdata)]
     query = query'
 
   fun ref has_next(): Bool => query.has_next()
-  fun ref next(): (MDBdata, MDBdata) => (query.nextkey, query.nextval)
+  fun ref next(): (Array[U8],Array[U8]) => (query.nextkey, query.nextval)
   fun ref dispose() => query.dispose()
 
 class MDBValIter is Iterator[MDBdata]
@@ -315,7 +344,7 @@ class MDBValIter is Iterator[MDBdata]
     query = query'
 
   fun ref has_next(): Bool => query.has_next()
-  fun ref next(): MDBdata => query.nextval
+  fun ref next(): Array[U8] => query.nextval
   fun ref dispose() => query.dispose()
 
 class MDBKeyIter is Iterator[MDBdata]
@@ -327,5 +356,5 @@ class MDBKeyIter is Iterator[MDBdata]
     query = query'
 
   fun ref has_next(): Bool => query.has_next()
-  fun ref next(): MDBdata => query.nextkey
+  fun ref next(): Array[U8] => query.nextkey
   fun ref dispose() => query.dispose()

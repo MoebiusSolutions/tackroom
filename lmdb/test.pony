@@ -10,7 +10,7 @@ try
     // Open the environement, specifying the name of the directory that
     // will contain all the data files.  The 2nd parameter is the file system
     // protection mode for the files.
-    dbe.open( "lmdb.mdb", 0, 0b111000000 )
+    dbe.open( "fruit.mdb", 0, 0b111000000 )
 
     // Fetch an environment parameter.  Key size is usually 511.
     let maxkey = dbe.maxkeysize()
@@ -27,13 +27,13 @@ try
 	MDBopenflag.createdb() )
 
     // Now we write some records.  Data must be passed as Array[U8].
-    write( dbi, "Orange", "fruit" )
-    write( dbi, "Orange", "color" )
-    write( dbi, "Zuccini", "vegetable" )
-    write( dbi, "Tuna", "protein" )
+    dbi( "Orange" ) = "fruit"
+    dbi( "Orange" ) = "color"
+    dbi( "Zuccini" ) = "vegetable"
+    dbi( "Tuna" ) = "protein"
 
     // Read back one record to see it is there.
-    let result = a2s(dbi( s2a("Orange") ))
+    let result = a2s(dbi( "Orange" ))
     env.out.print( " Read back "+result )
 
     // Done with the transaction.
@@ -63,7 +63,7 @@ try
     var v: Array[U8] = Array[U8].create(0)
     var first: Bool = true
     env.out.print("Test of deleting '" + key + "' record")
-    cursor.seek( s2a(key) )
+    cursor.seek( key )
     cursor.delete()
     cursor.close()
     test_all( dbi, env )
@@ -80,7 +80,7 @@ try
       end
 
     env.out.print("Test of iterator over just Orange values")
-    with orange = dbi.group( s2a("Orange") ).values() do
+    with orange = dbi.group( "Orange" ).values() do
     for v in orange do
 	    env.out.print("  " + a2s(v))
     end
@@ -118,7 +118,7 @@ try
 	  env.out.print(k,v)
 	end
     """
-    let start = s2a(group)
+    let start = group
     var cursor = dbi.cursor()
     var k: Array[U8] = Array[U8].create(0)
     var v: Array[U8] = Array[U8].create(0)
@@ -128,7 +128,7 @@ try
     while true do
       try
 	if first then
-          (k,v) = cursor.seek( s2a("Orange") )
+          (k,v) = cursor.seek( "Orange" )
 	  first = false
         else
 	  (k,v) = cursor( MDBop.next_dup() )
@@ -154,7 +154,7 @@ try
       n = n + 1
     end
     consume s
-  
+/*  
   fun ref s2a( s: String val ): Array[U8] =>
     recover iso
       var a: Array[U8] = Array[U8].create( s.size() )
@@ -165,11 +165,7 @@ try
       end   
       a
       end
-
-  fun ref write( d: MDBDatabase, k: String, v: String ) ? =>
-    let key = s2a(k)
-    let dat = s2a(v)
-    d( key ) = dat
+*/
 		
 class MyNotify is MDBNotify
   """

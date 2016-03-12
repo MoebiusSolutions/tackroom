@@ -2,6 +2,8 @@
 # to ignore everything else.
 # Ignore compiler output
 bin/*
+*.o
+*.a
 # Ignore operational files
 *.log
 *.mdb

@@ -1,10 +1,9 @@
 /* Interface to cursor operations on LMDB databases. */
 
 use @mdb_cursor_get[Stat]( curs: Pointer[MDBcur],
-	key: (MDBValReceive | MDBValSend),
-	data: MDBValReceive, op: U32 )
+	key: MDBValue, data: MDBValue, op: U32 )
 use @mdb_cursor_put[Stat]( cursor: Pointer[MDBcur],
-    key: MDBValSend, data: MDBValSend, flags: FlagMask)
+    key: MDBValue, data: MDBValue, flags: FlagMask)
 use @mdb_cursor_del[Stat]( cur: Pointer[MDBcur], flags: FlagMask )
 use @mdb_cursor_count[Stat]( cur: Pointer[MDBcur], count: Pointer[U32] )
 use @mdb_cursor_close[None]( cur: Pointer[MDBcur] )
@@ -61,28 +60,28 @@ class MDBCursor
     let err = @mdb_cursor_renew( _mdbtxn, _mdbcur )
     _env>report_error( err )
 */
-  fun ref apply( op: U32 ): (MDBdata, MDBdata) ? =>
+  fun ref apply( op: U32 ): (Array[U8], Array[U8]) ? =>
     """
     Retrieve by cursor.
     This function retrieves key/data pairs from the database.  The
     op parameter determines how the cursor is to move, and the returned
     values are the key and data of the record found there.
      """
-     var keyp = MDBValReceive.create()
-     var datap = MDBValReceive.create()
+     var keyp = MDBValue.create()
+     var datap = MDBValue.create()
      let err = @mdb_cursor_get( _mdbcur, keyp, datap, op )
      _env.report_error( err )
-     (MDBUtil.to_a(keyp), MDBUtil.to_a(datap))
+    (keyp.array(), datap.array())
 
-  fun ref seek( key: MDBdata ): (MDBdata,MDBdata) ? =>
+  fun ref seek( key: MDBdata ): (Array[U8],Array[U8]) ? =>
     """
     Position the cursor to the record with a specified key.
     """
-    var keyp = MDBUtil.from_a(key)
-    var datap = MDBValReceive.create()
+    var keyp = MDBValue.create(key)
+    var datap = MDBValue.create()
     let err = @mdb_cursor_get( _mdbcur, keyp, datap, MDBop.set() )
     _env.report_error( err )
-    (key, MDBUtil.to_a(datap))
+    (keyp.array(), datap.array())
 
   fun ref update( key: MDBdata, value: MDBdata, flags: FlagMask = 0 ) ? =>
     """
@@ -90,8 +89,8 @@ class MDBCursor
     This function stores key/data pairs into the database.
     The cursor is positioned at the new item, or on failure usually near it.
     """
-    var keyp = MDBUtil.from_a(key)
-    var datap = MDBUtil.from_a(value)
+    var keyp = MDBValue.create(key)
+    var datap = MDBValue(value)
     let err = @mdb_cursor_put( _mdbcur, keyp, datap, flags )
      _env.report_error( err )
 
