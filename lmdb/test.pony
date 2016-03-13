@@ -31,6 +31,9 @@ try
     dbi( "Orange" ) = "color"
     dbi( "Zuccini" ) = "vegetable"
     dbi( "Tuna" ) = "protein"
+    dbi( "Tomato" ) = "vegetable"
+    dbi( "Tilapia" ) = "protein"
+
 
     // Read back one record to see it is there.
     let result = a2s(dbi( "Orange" ))
@@ -48,6 +51,7 @@ try
     test_group( dbi, env, "Orange" )
     test_delete( dbi, env, "Tuna" )
     test_loop( dbi, env )
+    test_partial( dbi, env, "T" )
     env.out.print("Done")
 
     mynote.print( true )
@@ -67,6 +71,17 @@ try
     cursor.delete()
     cursor.close()
     test_all( dbi, env )
+
+  fun ref test_partial( dbi: MDBDatabase, env: Env, start: String ) ? =>
+    """
+    Loop over all records with same initial string.
+    """
+    env.out.print("Test of iterator over just '"+start+"' records")
+    with query = dbi.partial(start).pairs() do
+      for (k,v) in query do
+        env.out.print("  " + a2s(k) + " = " + a2s(v))
+        end
+      end
 
   fun ref test_loop( dbi: MDBDatabase, env: Env ) ? =>
     """

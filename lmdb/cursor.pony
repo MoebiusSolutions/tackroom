@@ -73,13 +73,15 @@ class MDBCursor
      _env.report_error( err )
     (keyp.array(), datap.array())
 
-  fun ref seek( key: MDBdata ): (Array[U8],Array[U8]) ? =>
+  fun ref seek( key: MDBdata, partial: Bool = false ):
+		(Array[U8],Array[U8]) ? =>
     """
     Position the cursor to the record with a specified key.
     """
     var keyp = MDBValue.create(key)
     var datap = MDBValue.create()
-    let err = @mdb_cursor_get( _mdbcur, keyp, datap, MDBop.set() )
+    let err = @mdb_cursor_get( _mdbcur, keyp, datap,
+      if partial then MDBop.set_range() else MDBop.set() end )
     _env.report_error( err )
     (keyp.array(), datap.array())
 
@@ -90,7 +92,7 @@ class MDBCursor
     The cursor is positioned at the new item, or on failure usually near it.
     """
     var keyp = MDBValue.create(key)
-    var datap = MDBValue(value)
+    var datap = MDBValue.create(value)
     let err = @mdb_cursor_put( _mdbcur, keyp, datap, flags )
      _env.report_error( err )
 

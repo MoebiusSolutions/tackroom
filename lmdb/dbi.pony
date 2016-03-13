@@ -263,6 +263,8 @@ class MDBDatabase
   fun ref all(): MDBSequence ? => MDBSequence.create( this, None )
   fun ref group( start: MDBdata ): MDBSequence ? =>
     MDBSequence.create( this, start )
+  fun ref partial( start: MDBdata): MDBSequence ? =>
+    MDBSequence.create( this, start, true )
 
 class MDBSequence
   """
@@ -271,13 +273,20 @@ class MDBSequence
   """
   var first: Bool = true
   let curs: MDBCursor
-  let start: (MDBdata | None)  
+  let start: (Array[U8] | None)
+  let partial: Bool
   var nextkey: Array[U8] = Array[U8]
   var nextval: Array[U8] = Array[U8]
 
-  new create( dbi: MDBDatabase, start': (MDBdata | None) = None ) ? =>
+  new create( dbi: MDBDatabase,
+	  start': (MDBdata | None) = None,
+	  partial': Bool = false ) ? =>
     curs = dbi.cursor()
-    start = start'
+    start = match start'
+      | let a: Array[U8] => a
+      | let s: String => Array[U8].from_cstring(@noop(s.cstring()), s.size())
+      end
+    partial = partial'
 
   // These three methods generate the actual iterator that Pony will use.
   // They will call back here to get the data.
@@ -299,22 +308,47 @@ class MDBSequence
         // and clear the first-time flag.
         first = false
         match start
-	  | let skey: MDBdata => curs.seek( skey )
+	  | let skey: MDBdata => curs.seek( skey, partial )
 	  else
            curs( MDBop.first() )
 	  end
       else
         // Subsequent times, get the next record in that series.
         match start
-          | let skey: MDBdata => curs( MDBop.next_dup() )
+          | let skey: MDBdata =>
+	      if partial then
+                curs( MDBop.next() )
+	      else
+	        curs( MDBop.next_dup() )
+	      end
 	  else curs( MDBop.next() )
         end
        end
-      true
+
+      // If doing partial key range, the initial part of the retreived
+      // key has to match the starting key fragment.
+      if partial then
+        _initial_match( start, nextkey )
+      else true end
     else
       false
     end
-	
+
+  fun ref _initial_match( a1: (Array[U8] | None), a2: Array[U8] ): Bool =>
+    """
+    True only if initial substring of a2 matches all of a1.
+    """
+    match a1
+    | let leading: Array[U8] =>
+	if leading.size() > a2.size() then return false end
+	var i: USize = 0
+	while i < leading.size() do
+	  try if leading(i) != a2(i) then return false end else return false end
+	  i=i+1
+        end
+      true
+      else false end
+	      
   fun ref next(): (Array[U8],Array[U8]) =>
     """
     Return the next record in the series.  This was actually just fetched.
