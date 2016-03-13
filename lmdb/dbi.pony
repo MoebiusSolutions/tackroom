@@ -169,7 +169,7 @@ class MDBSequence
   """
   var first: Bool = true
   let curs: MDBCursor
-  let start: (Array[U8] | None)
+  let start: (MDBdata | None)
   let partial: Bool
   var nextkey: Array[U8] = Array[U8]
   var nextval: Array[U8] = Array[U8]
@@ -179,9 +179,10 @@ class MDBSequence
 	  partial': Bool = false ) ? =>
     curs = dbi.cursor()
     start = match start'
-      | let a: Array[U8] => a
-      | let s: String => Array[U8].from_cstring(@noop(s.cstring()), s.size())
-      end
+	| None => None
+	else
+	  MDBConvert.array( start' )
+	end
     partial = partial'
 
   // These three methods generate the actual iterator that Pony will use.
@@ -230,7 +231,7 @@ class MDBSequence
       false
     end
 
-  fun ref _initial_match( a1: (Array[U8] | None), a2: Array[U8] ): Bool =>
+  fun ref _initial_match( a1: (MDBdata | None), a2: Array[U8] ): Bool =>
     """
     True only if initial substring of a2 matches all of a1.
     """

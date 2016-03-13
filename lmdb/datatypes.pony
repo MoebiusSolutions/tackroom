@@ -132,3 +132,32 @@ primitive MDBConvert
       n=n+1
       end
     consume s
+
+  fun array( data: (MDBdata | None) ): Array[U8] =>
+    match data
+    | let a: Array[U8] => a
+    | let s: String =>
+        Array[U8].from_cstring(@noop(s.cstring()), s.size())
+    | let n: U32 =>
+	// Numeric values have to be copied into an array then the
+	// byte order reversed.
+	var temp: U32 = n
+	var a: Array[U8] = Array[U8].undefined(4)
+	@memmove( a.cstring(), addressof temp, 4 )
+	var b: Array[U8] = a.reverse()
+	b
+    | let n: U64 =>
+	var temp: U64 = n
+	var a: Array[U8] = Array[U8].undefined(8)
+	@memmove( a.cstring(), addressof temp, 8 )
+	var b: Array[U8] = a.reverse()
+	b
+    | let n: U128 =>
+	var temp: U128 = n
+	var a: Array[U8] = Array[U8].undefined(16)
+	@memmove( a.cstring(), addressof temp, 16 )
+	var b: Array[U8] = a.reverse()
+	b
+    else
+	Array[U8].create()
+    end
