@@ -45,7 +45,7 @@ try
 
     // Read back one record to see it is there.
     let result = food( "Tuna" )
-    env.out.print( " Read back Tuna = "+a2s(result) )
+    env.out.print( " Read back Tuna = "+MDBConvert.string(result) )
 
     // Done with the transaction.  This does a 'sync' operation to make
     // sure the on-disk file reflect recent operations.
@@ -75,13 +75,13 @@ try
 
   fun ref test_numbers( dbi: MDBDatabase, env: Env ) ? =>
     env.out.print("Test of numeric keys")
-    dbi( 17 ) = "seventeen"
-    dbi( 32 ) = "thirtytwo"
-    dbi( 256 ) = "three hundred"
+    dbi( U32(17) ) = "seventeen"
+    dbi( U32(32) ) = "thirtytwo"
+    dbi( U32(256) ) = "three hundred"
     with query = dbi.all().pairs() do
     for (k,v) in query do
 	    let key = MDBConvert.u32(k)
-	    env.out.print("  " + key.string() + " = " + a2s(v))
+	    env.out.print("  " + key.string() + " = " + MDBConvert.string(v))
         end
       end
     	  
@@ -103,7 +103,7 @@ try
     env.out.print("Test of iterator over just '"+start+"' records")
     with query = dbi.partial(start).pairs() do
       for (k,v) in query do
-        env.out.print("  " + a2s(k) + " = " + a2s(v))
+        env.out.print("  " + MDBConvert.string(k) + " = " + MDBConvert.string(v))
         end
       end
 
@@ -114,14 +114,14 @@ try
     env.out.print("Test of iterator over all records")
     with query = dbi.all().pairs() do
       for (k,v) in query do
-        env.out.print("  " + a2s(k) + " = " + a2s(v))
+        env.out.print("  " + MDBConvert.string(k) + " = " + MDBConvert.string(v))
         end
       end
 
     env.out.print("Test of iterator over just Orange values")
     with orange = dbi.group( "Orange" ).values() do
     for v in orange do
-	    env.out.print("  " + a2s(v))
+	    env.out.print("  " + MDBConvert.string(v))
     end
     end
 
@@ -143,7 +143,7 @@ try
         else
 	  (k,v) = cursor( MDBop.prev() )
         end // if
-        env.out.print("  "+a2s(k)+" = "+a2s(v))
+        env.out.print("  "+MDBConvert.string(k)+" = "+MDBConvert.string(v))
       else
 	break
       end
@@ -172,39 +172,13 @@ try
         else
 	  (k,v) = cursor( MDBop.next_dup() )
         end // if
-        env.out.print("  "+a2s(k)+" = "+a2s(v))
+        env.out.print("  "+MDBConvert.string(k)+
+	    " = "+MDBConvert.string(v))
       else
 	break
       end
      end
     cursor.close()
-
-  fun ref a2s( a: Array[U8] box) : String val =>
-    """
-    Tedious function to convert Array[U8] to String.  There is
-    undoubtedly a better way to do this.
-    """
-    // Make a local sendable copy of the size, so we cna use it in a recover.
-    let len: USize val = a.size()
-    var s: String iso = recover iso String.create( len ) end
-    var n: USize = 0
-    while n < a.size() do
-      try s.push( a(n) ) end
-      n = n + 1
-    end
-    consume s
-/*  
-  fun ref s2a( s: String val ): Array[U8] =>
-    recover iso
-      var a: Array[U8] = Array[U8].create( s.size() )
-      var n: USize = 0
-      while n < s.size() do
-	try a.push( s(n) ) end
-        n = n + 1
-      end   
-      a
-      end
-*/
 		
 class MyNotify is MDBNotify
   """
