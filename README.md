@@ -3,11 +3,14 @@
 This package contains interfaces to a few simple databases.
 
 * LMDB (Lightning Memory Mapped Database) is an open source high-performance
-memory-mapped B-tree key-value database written by Symas Corporation.
-Source is available at https://github.com/LMDB/lmdb.git.
+memory-mapped B-tree key-value database written by
+[Symas Corporation](symas.com/lmdb).  Online documentation is
+[here](http://symas.com/mdb/doc/), though the Pony wrapper simplifies
+most of it.
+Source is available at [https://github.com/LMDB/lmdb.git](https://github.com/LMDB/lmdb.git).
 
 * LevelDB is an open source key-value database written by Google
-and source is available at https://github.com/google/leveldb.git  
+and source is available at [https://github.com/google/leveldb.git](https://github.com/google/leveldb.git)  
 
     LevelDB is a simple key-value store with no added features like
 secondary indices, distribution, etc.  Keys and values can be
