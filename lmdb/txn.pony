@@ -1,3 +1,5 @@
+/* All LMDB data operations take place within a transaction.
+*/
 use @mdb_txn_id[U32]( txn: Pointer[MDBtxn] tag )   
 use @mdb_txn_commit[Stat]( txn: Pointer[MDBtxn] tag )
 use @mdb_txn_abort[None]( txn: Pointer[MDBtxn] tag )

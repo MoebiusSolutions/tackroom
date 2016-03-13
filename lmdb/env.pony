@@ -75,27 +75,6 @@ primitive MDBerror
   fun bad_valsize(): I32 => -30781  /** Unsupported size of key/DB name/data, or wrong DUPFIXED size */
   fun bad_dbi(): I32 => -30780	/** DBI was changed unexpectedly */
 
-//  Flags on creating an environment
-primitive MDBenvflag
-  fun fixedmap(): FlagMask => 0x01   // mmap at a fixed address (experimental)
-  fun nosubdir(): FlagMask => 0x400  // no environment directory
-  fun nosync(): FlagMask => 0x10000  // don't fsync after commit
-  fun rdonly(): FlagMask => 0x20000  
-  fun nometasync(): FlagMask => 0x40000  // don't fsync metapage after commit
-  fun writemap(): FlagMask => 0x80000  // use writable mmap
-  fun mapasync(): FlagMask => 0x100000 // use asynchronous msync when WRITEMAP is used
-  fun notls(): FlagMask => 0x200000    // tie reader locktable slots to txn
-		// objects instead of to threads
-  fun nolock(): FlagMask => 0x400000   // don't do any locking,
-	  // caller must manage their own locks */
-  fun nordahead(): FlagMask => 0x800000 // don't do readahead (no effect on Windows)
-  fun nomeminit(): FlagMask => 0x1000000 // don't initialize malloc'd memory before writing to datafile
-
-// Flags on copy operations
-primitive MDBcopyflag
-  fun compact(): FlagMask => 0x01  // Omit free space from copy, and renumber all
-	                 // pages sequentially.
-
 // Environment statistics
 struct MDBstat
   """

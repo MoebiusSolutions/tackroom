@@ -2,6 +2,10 @@
 
 This package contains interfaces to a few simple databases.
 
+* LMDB (Lightning Memory Mapped Database) is an open source high-performance
+memory-mapped B-tree key-value database written by Symas Corporation.
+Source is available at https://github.com/LMDB/lmdb.git.
+
 * LevelDB is an open source key-value database written by Google
 and source is available at https://github.com/google/leveldb.git  
 
@@ -9,22 +13,25 @@ and source is available at https://github.com/google/leveldb.git
 secondary indices, distribution, etc.  Keys and values can be
 any byte sequences.
 
-* LMDB (Lightning Memory Mapped Database) is an open source high-performance
-memory-mapped B-tree key-value database written by Symas Corporation.
-Source is available at https://github.com/LMDB/lmdb.git.
+## LMDB Usage
+
+The LMDB interface supports these functions:
+
+* Full-database, duplicate-key group, and partial key match scans
+* Use of Pony iterator notation for clean query code
+* Access to all lower level LMDB cursor operations
+* Transactions
+* Multiple 'databases' in one file.  (actually separate B-trees - think of them as tables)
+* Use of Array[U8], String, or U32 types as keys and data inputs
+* Supports Pony 'sugar' notation for simple insert and retreival
+
+See the file lmdb/test.pony for examples.
 
 ## LevelDB Usage
 
 See the file leveldb/test.pony
 
-## LMDB Usage
-
-See the file lmdb/test.pony
-
 ## To do
 
-* Array[U8] to String conversions and reverse
-* Memory management, copying strings, freeing things
-* Range retreivals using iterators.
 * More of the management interface
 * Index tables

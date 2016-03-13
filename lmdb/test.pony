@@ -7,51 +7,63 @@ try
     // The Notify class will take care of reporting any errors.	  
     var dbe: MDBEnvironment = MDBEnvironment.create( mynote )
 
+    // Allow for up to two databases.
+    dbe.set_maxdb( 2 )
+
     // Open the environement, specifying the name of the directory that
-    // will contain all the data files.  The 2nd parameter is the file system
+    // will contain all the data files.  The 2nd parameter is a bitmask
+    // of options.  The 3rd parameter is the file system
     // protection mode for the files.
     dbe.open( "fruit.mdb", 0, 0b111000000 )
 
     // Fetch an environment parameter.  Key size is usually 511.
     let maxkey = dbe.maxkeysize()
     env.out.print("  Max key size "+maxkey.string())
-    // Start a Transaction.  The 0 is a bitmask of options.
+
+    // Start a Transaction.  The 0 is a bitmask of options, a subset of the
+    // Environment options - just rdonly, nosync, and nometasync.
     var txn = dbe.begin( 0 )
 
     // Open a 'database' within the environment.  Each database is a
     // separate Btree, but they are all contained within the single file.
     // By specifying None for the name, we get the default, single, nameless
-    // database.
-    var dbi = txn.open( None,
-	MDBopenflag.dupsort() or
+    // database.  Note that databases are opened within a particular
+    // transaction.
+    var food = txn.open( "FOOD",
+	MDBopenflag.dupsort() or    // Allow duplicate keys
+	MDBopenflag.createdb() )    // Create files if missing
+    var nums = txn.open( "NUMS",
 	MDBopenflag.createdb() )
 
-    // Now we write some records.  Data must be passed as Array[U8].
-    dbi( "Orange" ) = "fruit"
-    dbi( "Orange" ) = "color"
-    dbi( "Zuccini" ) = "vegetable"
-    dbi( "Tuna" ) = "protein"
-    dbi( "Tomato" ) = "vegetable"
-    dbi( "Tilapia" ) = "protein"
-
+    // Now we write some records.  Data can be passed as String or Array[U8].
+    food( "Orange" ) = "fruit"
+    food( "Orange" ) = "color"
+    food( "Zuccini" ) = "vegetable"
+    food( "Tuna" ) = "protein"
+    food( "Tomato" ) = "vegetable"
+    food( "Tilapia" ) = "protein"
 
     // Read back one record to see it is there.
-    let result = a2s(dbi( "Orange" ))
-    env.out.print( " Read back "+result )
+    let result = food( "Tuna" )
+    env.out.print( " Read back Tuna = "+a2s(result) )
 
-    // Done with the transaction.
+    // Done with the transaction.  This does a 'sync' operation to make
+    // sure the on-disk file reflect recent operations.
     txn.commit()
 
     // Start another for testing cursor operations.
     txn = dbe.begin( 0 )
-    dbi = txn.open( None, 0 )
+    // Open the same table again
+    food = txn.open( "FOOD", 0 )
+    nums = txn.open( "NUMS", 0 )
     mynote.print( false )
-
-    test_all( dbi, env )
-    test_group( dbi, env, "Orange" )
-    test_delete( dbi, env, "Tuna" )
-    test_loop( dbi, env )
-    test_partial( dbi, env, "T" )
+    
+    test_all( food, env )
+    test_group( food, env, "Orange" )
+    test_delete( food, env, "Tuna" )
+    test_loop( food, env )
+    test_numbers( nums, env )
+    test_partial( food, env, "T" )
     env.out.print("Done")
 
     mynote.print( true )
@@ -61,6 +73,18 @@ try
 	env.out.print("Unexpected error")
   end
 
+  fun ref test_numbers( dbi: MDBDatabase, env: Env ) ? =>
+    env.out.print("Test of numeric keys")
+    dbi( 17 ) = "seventeen"
+    dbi( 32 ) = "thirtytwo"
+    dbi( 256 ) = "three hundred"
+    with query = dbi.all().pairs() do
+    for (k,v) in query do
+	    let key = MDBConvert.u32(k)
+	    env.out.print("  " + key.string() + " = " + a2s(v))
+        end
+      end
+    	  
   fun ref test_delete( dbi: MDBDatabase, env: Env, key: String ) ? =>
     var cursor = dbi.cursor()
     var k: Array[U8] = Array[U8].create(0)

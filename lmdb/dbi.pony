@@ -1,12 +1,4 @@
 use "debug"
-use "lib:helper"
-
-// @noop returns its parameter, unchanged.  But we declare different caps
-// for the input and output values, bypassing Pony's type checking.  The
-// authors of LMDB did not have that checking in mind when they designed
-// their API.
-use @noop[Pointer[U8] ref]( input: Pointer[U8] tag )
-
 use @mdb_dbi_close[None]( env: Pointer[MDBenv], dbi: Pointer[MDBdbi] )
 use @mdb_stat[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], dbstat: MDBstat )
 use @mdb_put[Stat]( txn: Pointer[MDBtxn] tag,
@@ -26,102 +18,6 @@ use @mdb_cursor_dbi[Pointer[MDBdbi]]( cur: Pointer[MDBcur] )
 use @mdb_cursor_open[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi],
 	cur: Pointer[Pointer[MDBcur]] )
 use @mdb_drop[Stat]( txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi], del: U32 )
-use @memmove[Pointer[None]](dst: Pointer[None], src: Pointer[None], len: USize)
-
-type _OptionalData is Maybe[MDBValue]
-	
-// Flags on opening a database.  These can be combined.
-primitive MDBopenflag
-  fun reversekey(): FlagMask => 0x02   // use reverse string keys
-  fun dupsort(): FlagMask => 0x04     // use sorted duplicates
-  fun integerkey(): FlagMask => 0x08  // numeric keys in native byte order: either unsigned int or size_t.
-  fun dupfixed(): FlagMask => 0x10   // with DUPSORT, sorted dup items have fixed size
-  fun integerdup(): FlagMask => 0x20 // with DUPSORT, dups are INTEGERKEY-style integers
-  fun reversedup(): FlagMask => 0x40 // with DUPSORT, use reverse string dups
-  fun createdb(): FlagMask => 0x40000  // create DB if not already existing
-
-// Flags on write operations.
-primitive MDBputflag
-  fun nooverwrite(): FlagMask => 0x10 // For put: Don't write if the key already exists.
-  fun nodupdata(): FlagMask => 0x20 // Only for #MDB_DUPSORT:
-      // For put: don't write if the key and data pair already exist.
-      // For mdb_cursor_del: remove all duplicate data items.
-  fun current(): FlagMask => 0x40 // For mdb_cursor_put: overwrite the current key/data pair
-  fun reserve(): FlagMask => 0x10000 // For put: Just reserve space for data,
-		// don't copy it. Return a pointer to the reserved space.
-  fun append(): FlagMask => 0x20000 //  Data is being appended, don't split full pages.
-  fun appenddup(): FlagMask => 0x40000 // Duplicate data is being appended, don't split full pages.
-  fun multiple(): FlagMask => 0x80000 // Store multiple data items in one call. Only for #MDB_DUPFIXED.
-
-// Data in and out is expressed as arrays of bytes rather then Strings
-// because Strings have an extra zero byte at the end, and have slightly
-// different semantics.
-type MDBdata is (Array[U8] | String)
-/*
-primitive MDBUtil
-  """
-  Functions to convert between Array[U8] and the LMDB descriptor format.
-  Contributed by jemc.
-  """
-  fun tag null_ptr[A](): Pointer[A] iso^ =>
-    @pony_alloc[Pointer[A] iso^](@pony_ctx[Pointer[None] iso](), USize(0))
-
-  fun tag from_a(sa: MDBdata): MDBValue =>
-    match sa
-        | let a: Array[U8] => MDBUtil.from_a(a)
-        | let s: String => MDBUtil.from_s(s)
-    else
-	  MDBValue.create()
-    end
-
-  fun tag from_s(s: String box): MDBValue =>
-    MDBValue( s.size(), s.cstring() )
-  fun tag to_a(mv: MDBValue): Array[U8] =>
-    """
-    Create a Pony Array[U8] from the database information.  We copy the
-    data because LMDB gave us a pointer directly into the mapped memory
-    area, which can change out from under us when the transaction ends.
-    """
-    Array[U8].from_cstring(mv.data, mv.size).clone()
-*/
-struct ref MDBValue
-  """
-  This simple descripter is used as an in/out parameter to some FFI
-  routines.
-
-  Generic structure used for passing keys and data INTO the database.
-  It is 'box': read-only by this actor - writable by others.
-  Key sizes must be between 1 and env.maxkeysize() inclusive.
-  The same applies to data sizes in databases with the DUPSORT flag.
-
-  Other data items can in theory be from 0 to 0xffffffff bytes long.
-  Values returned from the database are valid only until a subsequent
-  update operation, or the end of the transaction, so we copy any
-  returned data into Pony-space. The fields will be overwritten by
-  LMDB so we just initialize them to zero for now.
-  """
-  var _len: USize
-  // ptr is tag because that is what Array.cstring() returns.
-  var _tptr: Pointer[U8] tag
-
-  new create( arg: (Array[U8] | String| None) = None ) =>
-    match arg
-      | let a: Array[U8] =>
-		_len = a.size()
-		_tptr = a.cstring()
-      | let s: String =>
-		_len = s.size()
-		_tptr = s.cstring()
-    else
-      _len = 0
-      _tptr = Pointer[U8].create()
-    end
-
-  // We use @noop to convert a tag pointer to a ref pointer.
-  fun ref data(): Pointer[U8] ref => @noop(_tptr)
-  fun ref size(): USize => _len
-  fun ref array(): Array[U8] =>
-    Array[U8].from_cstring( @noop(_tptr), _len ).clone()
 
 class MDBDatabase
   """
