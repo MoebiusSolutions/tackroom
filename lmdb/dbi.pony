@@ -29,6 +29,7 @@ class MDBDatabase
   let _mdbenv: Pointer[MDBenv]
   let _mdbtxn: Pointer[MDBtxn]
   let _mdbdbi: Pointer[MDBdbi]
+  var _indexfor: (MDBDatabase | None) = None
 
   new create( env: MDBEnvironment,
 	  txn: Pointer[MDBtxn], dbi: Pointer[MDBdbi] ) =>
@@ -36,6 +37,11 @@ class MDBDatabase
     _mdbenv = env.getenv()
     _mdbtxn = txn
     _mdbdbi = dbi
+
+  fun ref setindexfor( base: MDBDatabase ) =>
+    _indexfor = base
+
+  fun ref indexfor(): (MDBDatabase | None) => _indexfor
 
   fun ref stats(): MDBstat =>
     """
@@ -168,15 +174,17 @@ class MDBSequence
   of the query.
   """
   var first: Bool = true
+  let dbi: MDBDatabase
   let curs: MDBCursor
   let start: (MDBdata | None)
   let partial: Bool
   var nextkey: Array[U8] = Array[U8]
   var nextval: Array[U8] = Array[U8]
 
-  new create( dbi: MDBDatabase,
+  new create( dbi': MDBDatabase,
 	  start': (MDBdata | None) = None,
 	  partial': Bool = false ) ? =>
+    dbi = dbi'
     curs = dbi.cursor()
     start = match start'
 	| None => None
@@ -196,7 +204,7 @@ class MDBSequence
     Determine whether the next record to be fetched actually exists,
     according to the query criteria.  In LMDB the only way to find
     this out is to actually try to fetch the data.  Luckily, this
-    is very fast.
+    is very fast, and we save the results.
     """
     try
       (nextkey,nextval) =
@@ -240,17 +248,24 @@ class MDBSequence
 	if leading.size() > a2.size() then return false end
 	var i: USize = 0
 	while i < leading.size() do
-	  try if leading(i) != a2(i) then return false end else return false end
+	  try if leading(i) != a2(i) then return false end
+	    else return false end
 	  i=i+1
         end
       true
-      else false end
+    else false end
 	      
   fun ref next(): (Array[U8],Array[U8]) =>
     """
     Return the next record in the series.  This was actually just fetched.
     """
-    (nextkey, nextval)
+    match dbi.indexfor()
+     | let other: MDBDatabase =>
+        try (nextkey,other( nextkey ))
+	else (Array[U8].create(), Array[U8].create()) end
+     else
+	(nextkey, nextval)
+     end
 
   fun ref dispose() => curs.close()
 	

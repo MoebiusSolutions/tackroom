@@ -1,5 +1,4 @@
-// Library major version 0.9.70
-// The release date of this library version "December 19, 2015"
+// Library major version 0.9.70, released December 19, 2015.
 
 use "debug"
 use "lib:lmdb"  // Link against the lmdb library.
@@ -267,7 +266,7 @@ class MDBEnvironment
     """
     @mdb_env_get_userctx( _mdbenv )
 
-  fun ref begin( flags: FlagMask,
+  fun ref begin( flags: FlagMask = 0,
     parent: (MDBTransaction | None) = None ): MDBTransaction ? =>
     """
     Start a transaction within this environment.

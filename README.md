@@ -25,7 +25,7 @@ The LMDB interface supports these functions:
 * Access to all lower level LMDB cursor operations
 * Transactions
 * Multiple 'databases' in one file.  (actually separate B-trees - think of them as tables)
-* Use of Array[U8], String, or U32 types as keys and data inputs
+* Use of Array[U8], String, U128, U64, or U32 types as keys and data inputs
 * Supports Pony 'sugar' notation for simple insert and retreival
 
 See the file lmdb/test.pony for examples.
