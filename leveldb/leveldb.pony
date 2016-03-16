@@ -29,34 +29,15 @@ use "lib:leveldb"
 
 // First we translate the LevelDB C API calls into Pony FFIs.
 // These came from include/c.h in the LevelDB source files.
-/* extern leveldb_t* leveldb_open(
-    const leveldb_options_t* options,
-    const char* name,
-    char** errptr); */
 use @leveldb_open[Pointer[U8] tag]( ropts: Pointer[U8] tag,
     name: Pointer[U8] tag,
     errptr: Pointer[Pointer[U8]] )
-
-/* extern void leveldb_close(leveldb_t* db); */
 use @leveldb_close[None]( db: Pointer[U8] tag )
-
-/* extern void leveldb_put(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
-    const char* key, size_t keylen,
-    const char* val, size_t vallen,
-    char** errptr); */
 use @leveldb_put[None]( db: Pointer[U8] tag,
     wopts: Pointer[U8],
     key: Pointer[U8] tag, keylen: USize,
     value: Pointer[U8] tag, valuelen: USize,
     errptr: Pointer[Pointer[U8]] )
-
-/* extern void leveldb_delete(
-    leveldb_t* db,
-    const leveldb_writeoptions_t* options,
-    const char* key, size_t keylen,
-    char** errptr); */
 use @leveldb_delete[None]( db: Pointer[U8] tag,
     wopts: Pointer[U8],
     key: Pointer[U8] tag, keylen: USize,
@@ -71,13 +52,7 @@ use @leveldb_write[None]( db: Pointer[U8],
     opts: Pointer[U8], batch: Pointer[U8], errptr: Pointer[U8] )
 
 /* Returns NULL if not found.  A malloc()ed array otherwise.
-   Stores the length of the array in *vallen. 
-extern char* leveldb_get(
-    leveldb_t* db,
-    const leveldb_readoptions_t* options,
-    const char* key, size_t keylen,
-    size_t* vallen,
-    char** errptr); */
+   Stores the length of the array in *vallen. */
 use @leveldb_get[Pointer[U8]]( db: Pointer[U8] tag,
    ropts: Pointer[U8],
    key: Pointer[U8] tag, keylen: USize,
@@ -358,7 +333,7 @@ class LDBcursor
       String.copy_cstring(ptr)
     end
 
-class LevelDB is PonyDB
+class LevelDB
   """
   Represents an open connection to a LevelDB database.
   """
@@ -374,8 +349,10 @@ class LevelDB is PonyDB
     errptr = Pointer[U8].create()
     let opts = @leveldb_options_create()
     @leveldb_options_set_create_if_missing( opts, U8(1) )
+
     _dbhandle = @leveldb_open( opts, name.cstring(), addressof errptr)
     @leveldb_options_destroy( opts )
+
     errtxt = if errptr.is_null() then
        String.create()
     else

@@ -9,6 +9,7 @@ debug:	helper
 helper:
 	gcc -Wall -c helper.c -o helper.o
 	ar rv libhelper.a helper.o
+	rm helper.o
 
 clean:
 	rm -f libhelper.a helper.o
