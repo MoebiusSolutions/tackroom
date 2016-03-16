@@ -1,7 +1,7 @@
 primitive SqliteOpen
  fun readonly(): U32 => 0x00000001  /* Ok for sqlite3_open_v2() */
  fun readwrite(): U32 =>        0x00000002  /* Ok for sqlite3_open_v2() */
- fun create(): U32 =>           0x00000004  /* Ok for sqlite3_open_v2() */
+ fun createdb(): U32 =>           0x00000004  /* Ok for sqlite3_open_v2() */
  fun deleteonclose(): U32 =>    0x00000008  /* VFS only */
  fun exclusive(): U32 =>        0x00000010  /* VFS only */
  fun autoproxy(): U32 =>        0x00000020  /* VFS only */

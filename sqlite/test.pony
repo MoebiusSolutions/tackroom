@@ -1,9 +1,14 @@
 actor Main
   new create( env: Env ) =>
-    var db: SqliteDB = SqliteDB.create( MyNotify.create(env), "movies.db",
-	  SqliteOpen.readonly() )
+    // Open the database
+    var db: SqliteDB = SqliteDB.create( MyNotify.create(env),
+	"movies.db",
+	SqliteOpen.readonly() )
+
+    // Create a query.
     var q: SqliteStmt = db.prepare( "SELECT * FROM MOVIES" )
 
+    // Print some metadata.
     let nc = q.columns()
     env.out.print("Query has "+nc.string() + " columns")
 
@@ -12,7 +17,12 @@ actor Main
       let name = q.name(n)
       let dtype = q.datatype(n)
       env.out.print("  Col "+n.string()+" "+name+" "+dtype.string())
+      n = n + 1
     end
+
+    while q.has_next() do
+      env.out.print( q.text(1) )
+      end
 
     q.close()
     db.close()
