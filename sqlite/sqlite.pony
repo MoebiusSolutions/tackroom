@@ -108,11 +108,15 @@ class SqliteStmt
 	sdb._report(err)
 	end
 
-  fun ref name( column: U32 ): String ref =>
+  fun ref name( column: U32 ): String =>
     """
     Returns the name of a column in the query.
     """
-    String.from_cstring( @sqlite3_column_name( handle, column ))
+    // Bring
+    let hdl = handle
+    recover val
+      String.from_cstring( @sqlite3_column_name( hdl, column ))
+      end
 
   fun ref datatype( column: U32 ): U32 =>
     @sqlite3_column_type( handle, column )
