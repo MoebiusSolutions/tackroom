@@ -2,7 +2,7 @@ actor Main
   new create( env: Env ) =>
     // Open the database
     var db: SqliteDB = SqliteDB.create( MyNotify.create(env),
-	"movies.dbx",
+	"movies.db",
 	SqliteOpen.readwrite() )
 
     // Create a query.

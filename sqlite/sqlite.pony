@@ -4,14 +4,6 @@
 use "lib:sqlite3"
 use "debug"
 
-use "lib:helper"
-
-// @noop returns its parameter, unchanged.  But we declare different caps
-// for the input and output values, bypassing Pony's type checking.  The
-// authors of LMDB did not have that checking in mind when they designed
-// their API.
-use @noop[Pointer[U8] ref]( input: Pointer[U8] tag )
-
 use @sqlite3_open_v2[U32]( name: Pointer[U8] tag,
 	db: Pointer[Pointer[_PPdb]], flags: U32, vfs: Pointer[U8] )
 use @sqlite3_close_v2[U32]( db: Pointer[_PPdb] tag )
@@ -22,12 +14,12 @@ use @sqlite3_column_count[U32]( stmt: Pointer[_PPstmt] tag )
 use @sqlite3_column_name[Pointer[U8]]( stmt: Pointer[_PPstmt] tag, column: U32 )
 use @sqlite3_column_type[U32]( stmt: Pointer[_PPstmt] tag, column: U32 )
 use @sqlite3_column_double[F64]( handle: Pointer[_PPstmt] tag, column: U32 )
-use @sqlite3_column_text[Pointer[U8] tag]( handle: Pointer[_PPstmt] tag,
+use @sqlite3_column_text[Pointer[U8] ref]( handle: Pointer[_PPstmt] tag,
 	column: U32 )
 use @sqlite3_column_int[I64]( handle: Pointer[_PPstmt] tag, column: U32 )
 use @sqlite3_step[U32]( stmt: Pointer[_PPstmt] tag )
 use @sqlite3_column_bytes[U32]( stmt: Pointer[_PPstmt] tag, column: U32 )
-use @sqlite3_column_blob[Pointer[U8] val]( stmt: Pointer[_PPstmt] tag, column: U32 )
+use @sqlite3_column_blob[Pointer[U8] ref]( stmt: Pointer[_PPstmt] tag, column: U32 )
 use @sqlite3_bind_text[U32]( stmt: Pointer[_PPstmt] tag, column: U32,
 	data: Pointer[U8] tag, size: USize )
 use @sqlite3_bind_blob[U32]( stmt: Pointer[_PPstmt] tag,column: U32,
@@ -36,6 +28,7 @@ use @sqlite3_bind_int[U32]( stmt: Pointer[_PPstmt] tag, column: U32, data: I64 )
 use @sqlite3_bind_double[U32]( stmt: Pointer[_PPstmt] tag, column: U32, data: F64 )
 use @sqlite3_finalize[U32]( stmt: Pointer[_PPstmt] tag )
 use @sqlite3_reset[U32]( stmt: Pointer[_PPstmt] tag )
+use @sqlite3_errmsg[Pointer[U8]]( db: Pointer[_PPdb] tag )
 
 primitive _PPdb
 primitive _PPstmt
@@ -64,7 +57,12 @@ class SqliteDB
     Debug.out("Reporting "+code.string())
     if code == 0 then return end
     match _notify
-      | let n: SQLNotify => n.fail(code, SqliteError.msg(code))
+    | let n: SQLNotify =>
+	var hdl = handle
+        let msg = recover val
+	      String.from_cstring( @sqlite3_errmsg( hdl ) )
+	      end
+	    n.fail(code, msg)
     end
 
   fun ref close() =>
@@ -121,13 +119,12 @@ class SqliteStmt
 
   fun ref string( column: U32 ): String =>
     """
-    Retruns the specified column as a string.
+    Returns the specified column as a string.
     """
     var col: U32 val = column
     var hdl = handle
     recover val
-      var ptr: Pointer[U8] ref = @noop(@sqlite3_column_text( hdl, col ))
-      String.copy_cstring( ptr )
+      String.copy_cstring( @sqlite3_column_text( hdl, col ) )
 	end
 
   fun ref blob( column: U32 ): Array[U8] val =>
@@ -137,7 +134,7 @@ class SqliteStmt
 	var hdl = handle
 	var len: USize = size.usize()
 	recover val
-	  var ptr: Pointer[U8] ref = @noop(@sqlite3_column_blob( hdl, col ))
+	  let ptr = @sqlite3_column_blob( hdl, col )
 	  Array[U8].from_cstring( ptr, len ).clone()
 	end
     else
