@@ -2,11 +2,12 @@ actor Main
   new create( env: Env ) =>
     // Open the database
     var db: SqliteDB = SqliteDB.create( MyNotify.create(env),
-	"movies.db",
-	SqliteOpen.readonly() )
+	"movies.dbx",
+	SqliteOpen.readwrite() )
 
     // Create a query.
-    var q: SqliteStmt = db.prepare( "SELECT * FROM MOVIES" )
+    var q: SqliteStmt = db.prepare(
+      """SELECT ROWID,TTL FROM MOVIES WHERE GEN="adv" ORDER BY TTL LIMIT 10""" )
 
     // Print some metadata.
     let nc = q.columns()
@@ -20,10 +21,17 @@ actor Main
       n = n + 1
     end
 
-    while q.has_next() do
-      env.out.print( q.text(1) )
+    while q.next() do
+      let num = q.int(0)
+      let ttl = q.string(1)
+      env.out.print( num.string() + ": " + ttl )
       end
 
+    q.close()
+
+    q = db.prepare("UPDATE MOVIES SET TTL=? WHERE ROWID=28")
+    q.bind( 1, "--> something---" )
+    q.execute()
     q.close()
     db.close()
 
@@ -37,5 +45,5 @@ class MyNotify is SQLNotify
     env = env'
 
   fun ref fail( code: U32, msg: String ) =>
-    env.out.print("SQLite error "+code.string()+"="+msg)
+    env.out.print("SQLite error "+code.string()+", "+msg)
 
