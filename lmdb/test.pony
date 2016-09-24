@@ -37,10 +37,10 @@ try
     // database.  Note that databases are opened within a particular
     // transaction.
     var food = txn.open( "FOOD",
-	MDBopenflag.dupsort() or    // Allow duplicate keys
-	MDBopenflag.createdb() )    // Create files if missing
+      MDBopenflag.dupsort() or    // Allow duplicate keys
+	    MDBopenflag.createdb() )    // Create files if missing
     var nums = txn.open( "NUMS",
-	MDBopenflag.createdb() )
+	  MDBopenflag.createdb() )
 
     // Now we write some records.  Data can be passed as String, Array[U8],
     // or various unsigned integers.

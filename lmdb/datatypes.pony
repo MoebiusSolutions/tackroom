@@ -22,7 +22,7 @@ use @memmove[Pointer[None]](dst: Pointer[None], src: Pointer[None], len: USize)
 
 // Data in can be any of these types.
 type MDBdata is (Array[U8] | String | U32 | U64 | U128 )
-type _OptionalData is Maybe[MDBValue]
+type _OptionalData is MaybePointer[MDBValue]
 
 // Data out is always Array[U8].
 

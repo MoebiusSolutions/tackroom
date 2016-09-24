@@ -1,7 +1,7 @@
 actor Main
   new create( env: Env ) =>
     // Open the database
-    var db: SqliteDB = SqliteDB.create( MyNotify.create(env),
+    var db: SqliteDB = SqliteDB.create( SqlTestNotify.create(env),
 	"movies.db",
 	SqliteOpen.readwrite() )
 
@@ -13,7 +13,7 @@ actor Main
     let nc = q.columns()
     env.out.print("Query has "+nc.string() + " columns")
 
-    var n: U32 = 0
+    var n: ISize = 0
     while n < nc do
       let name = q.name(n)
       let dtype = q.datatype(n)
@@ -35,7 +35,7 @@ actor Main
     q.close()
     db.close()
 
-class MyNotify is SQLNotify
+class SqlTestNotify is SQLNotify
   """
   Handle alerts coming back from SQLite
   """
