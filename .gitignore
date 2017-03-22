@@ -13,4 +13,5 @@ bin/*
 # Ignore editor backup files
 *.*~
 *~
-
+# Ingore the built lmdb program
+lmdb/lmdb

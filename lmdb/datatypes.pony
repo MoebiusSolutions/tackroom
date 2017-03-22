@@ -47,33 +47,33 @@ struct ref MDBValue
     match arg
       | let a: Array[U8] =>
 		_len = a.size()
-		_tptr = a.cstring()
+		_tptr = a.cpointer()
       | let s: String =>
 		_len = s.size()
-		_tptr = s.cstring()
+		_tptr = s.cpointer()
       | let n: U32 =>
 		// Numeric values have to be copied into an array then the
 		// byte order reversed.
 		var temp: U32 = n
-		var a: Array[U8] = Array[U8].undefined(4)
-		@memmove( a.cstring(), addressof temp, 4 )
+		var a = Array[U8].>undefined(4)
+		@memmove( a.cpointer(), addressof temp, 4 )
 		var b: Array[U8] = a.reverse()
 		_len = b.size()
-		_tptr = b.cstring()
+		_tptr = b.cpointer()
       | let n: U64 =>
 		var temp: U64 = n
-		var a: Array[U8] = Array[U8].undefined(8)
-		@memmove( a.cstring(), addressof temp, 8 )
+		var a = Array[U8].>undefined(8)
+		@memmove( a.cpointer(), addressof temp, 8 )
 		var b: Array[U8] = a.reverse()
 		_len = b.size()
-		_tptr = b.cstring()
+		_tptr = b.cpointer()
       | let n: U128 =>
 		var temp: U128 = n
-		var a: Array[U8] = Array[U8].undefined(16)
-		@memmove( a.cstring(), addressof temp, 16 )
+		var a = Array[U8].>undefined(16)
+		@memmove( a.cpointer(), addressof temp, 16 )
 		var b: Array[U8] = a.reverse()
 		_len = b.size()
-		_tptr = b.cstring()
+		_tptr = b.cpointer()
     else
       _len = 0
       _tptr = Pointer[U8].create()
@@ -82,7 +82,7 @@ struct ref MDBValue
 /* We use @noop to convert a tag pointer to a ref pointer.  The cstring
    functions of Array and String return a Pointer[U8] tag, but the
    constructor functions for those types want a Pointer[U8] ref.
-*/ 
+*/
   fun ref data(): Pointer[U8] ref => @noop(_tptr)
   fun ref size(): USize => _len
 
@@ -91,30 +91,30 @@ struct ref MDBValue
     Output values are always copied, since MDB only gives us a pointer
     into the virtual memory area, and that can change out from under us.
     """
-    Array[U8].from_cstring( @noop(_tptr), _len ).clone()
+    Array[U8].from_cpointer( @noop(_tptr), _len ).clone()
 
 primitive MDBConvert
   """
   Utility functions to convert Array[U8] data retreived from LMDB into
   various other types.  ALl of these require copying the data one way
   or another.
-  """    
+  """
   fun u32( a: Array[U8] ): U32 =>
     var n: U32 = 0
     var r: Array[U8] = a.reverse()
-    @memmove( addressof n, r.cstring(), 4 )
+    @memmove( addressof n, r.cpointer(), 4 )
     n
 
   fun u64( a: Array[U8] ): U64 =>
     var n: U64 = 0
     var r: Array[U8] = a.reverse()
-    @memmove( addressof n, r.cstring(), 8 )
+    @memmove( addressof n, r.cpointer(), 8 )
     n
 
   fun u128( a: Array[U8] ): U128 =>
     var n: U128 = 0
     var r: Array[U8] = a.reverse()
-    @memmove( addressof n, r.cstring(), 16 )
+    @memmove( addressof n, r.cpointer(), 16 )
     n
 
   fun string( a: Array[U8] box) : String val =>
@@ -137,25 +137,25 @@ primitive MDBConvert
     match data
     | let a: Array[U8] => a
     | let s: String =>
-        Array[U8].from_cstring(@noop(s.cstring()), s.size())
+        Array[U8].from_cpointer(@noop(s.cpointer()), s.size())
     | let n: U32 =>
 	// Numeric values have to be copied into an array then the
 	// byte order reversed.
 	var temp: U32 = n
-	var a: Array[U8] = Array[U8].undefined(4)
-	@memmove( a.cstring(), addressof temp, 4 )
+	var a = Array[U8].>undefined(4)
+	@memmove( a.cpointer(), addressof temp, 4 )
 	var b: Array[U8] = a.reverse()
 	b
     | let n: U64 =>
 	var temp: U64 = n
-	var a: Array[U8] = Array[U8].undefined(8)
-	@memmove( a.cstring(), addressof temp, 8 )
+	var a = Array[U8].>undefined(8)
+	@memmove( a.cpointer(), addressof temp, 8 )
 	var b: Array[U8] = a.reverse()
 	b
     | let n: U128 =>
 	var temp: U128 = n
-	var a: Array[U8] = Array[U8].undefined(16)
-	@memmove( a.cstring(), addressof temp, 16 )
+	var a = Array[U8].>undefined(16)
+	@memmove( a.cpointer(), addressof temp, 16 )
 	var b: Array[U8] = a.reverse()
 	b
     else
